@@ -1,0 +1,58 @@
+/* Kraken Agent — docs theme overrides */
+
+:root {
+  --md-primary-fg-color: #1a237e;
+  --md-accent-fg-color: #00bcd4;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #3949ab;
+  --md-accent-fg-color: #26c6da;
+}
+
+/* Hero section on landing page */
+.md-typeset .kraken-hero {
+  text-align: center;
+  padding: 2rem 0 1rem;
+}
+
+.md-typeset .kraken-hero h1 {
+  font-size: 2.8rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+.md-typeset .kraken-hero p {
+  font-size: 1.25rem;
+  opacity: 0.85;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* Feature grid */
+.md-typeset .grid.cards > ul > li {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Code blocks */
+.md-typeset pre > code {
+  font-size: 0.82rem;
+}
+
+/* Tables */
+.md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  font-weight: 600;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background-color: var(--md-primary-fg-color--light);
+}
