@@ -1,0 +1,9 @@
+py:kraken/__init__.py
+py:kraken/_transport.py
+py:kraken/client.py
+py:kraken/models.py
+py:kraken/sessions.py
+py:kraken/memory.py
+py:kraken/skills.py
+py:kraken/identity.py
+py:kraken/exceptions.py

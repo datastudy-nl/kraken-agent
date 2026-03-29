@@ -1,0 +1,3 @@
+discord.py>=2.4.0
+-e ../sdk/python
+python-dotenv>=0.21.0

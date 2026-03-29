@@ -1,0 +1,96 @@
+site_name: Kraken Agent
+site_url: https://kraken-agent.com
+site_description: The self-improving AI agent with relational memory
+site_author: Kraken Agent
+repo_name: kraken-agent/kraken-agent
+repo_url: https://github.com/datastudy-nl/kraken-agent
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+  - exclude:
+      glob:
+        - research/*
+        - implementations/*
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+  - Concepts:
+    - Architecture: concepts/architecture.md
+    - Memory System: concepts/memory.md
+    - Identity System: concepts/identity.md
+    - Skills & Self-Improvement: concepts/skills.md
+    - Sessions & Routing: concepts/sessions.md
+  - User Guide:
+    - Python SDK: guide/python-sdk.md
+    - API Reference: guide/api-reference.md
+    - Discord Bot: guide/discord-bot.md
+    - Scheduled Tasks: guide/scheduled-tasks.md
+    - Browser Automation: guide/browser-automation.md
+  - Developer Guide:
+    - Contributing: developer/contributing.md
+    - Project Structure: developer/project-structure.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/kraken-agent/kraken-agent
+
+copyright: Copyright &copy; 2026 Kraken Agent — MIT License
