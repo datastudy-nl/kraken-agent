@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List  # noqa: UP035
 
 from kraken._transport import Transport
-from kraken.models import Session, SessionDetail, Message
+from kraken.models import Message, Session, SessionDetail
 
 
 class Sessions:
@@ -57,7 +57,7 @@ class Sessions:
         *,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[Message]:
+    ) -> List[Message]:  # noqa: UP006
         """Get messages for a session."""
         data = self._t.get(
             f"/v1/sessions/{session_id}/messages",

@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 from kraken._transport import Transport
+from kraken.identity import Identity
+from kraken.memory import Memory
 from kraken.models import ChatResponse, HealthStatus
 from kraken.sessions import Sessions
-from kraken.memory import Memory
 from kraken.skills import Skills
 from kraken.tools import Tools
-from kraken.identity import Identity
 
 
 class KrakenClient:

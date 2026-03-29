@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from kraken._transport import Transport
 from kraken.models import AgentsMd, IdentityLink, Soul, UserModel
 
@@ -45,7 +47,7 @@ class Identity:
         display_name: str | None = None,
     ) -> IdentityLink:
         """Link a platform identity to a canonical user ID."""
-        payload: dict = {
+        payload: dict[str, Any] = {
             "canonical_user_id": canonical_user_id,
             "provider": provider,
             "provider_user_id": provider_user_id,

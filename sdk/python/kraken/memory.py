@@ -7,7 +7,6 @@ from typing import Any, Literal
 from kraken._transport import Transport
 from kraken.models import Entity, GraphView, MemoryQueryResult, Relationship
 
-
 QueryMode = Literal["auto", "local", "global", "drift", "basic"]
 
 

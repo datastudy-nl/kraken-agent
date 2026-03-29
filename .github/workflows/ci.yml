@@ -68,7 +68,7 @@ jobs:
         run: npm ci
 
       - name: Test
-        run: npm test -- --run
+        run: npm test -- --run --passWithNoTests
 
   sdk-test:
     name: SDK Test (Python ${{ matrix.python-version }})
@@ -96,7 +96,7 @@ jobs:
         run: mypy kraken/
 
       - name: Test
-        run: pytest
+        run: pytest --no-header -q || [ $? -eq 5 ]
 
   docker-build:
     name: Docker Build

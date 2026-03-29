@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List  # noqa: UP035
 
 from kraken._transport import Transport
 from kraken.models import Tool
@@ -36,7 +36,7 @@ class Tools:
         instructions: str,
         *,
         input_schema: dict[str, Any] | None = None,
-        tags: list[str] | None = None,
+        tags: List[str] | None = None,  # noqa: UP006
     ) -> Tool:
         payload: dict[str, Any] = {
             "name": name,
@@ -62,7 +62,7 @@ class Tools:
         description: str | None = None,
         instructions: str | None = None,
         input_schema: dict[str, Any] | None = None,
-        tags: list[str] | None = None,
+        tags: List[str] | None = None,  # noqa: UP006
     ) -> Tool:
         payload: dict[str, Any] = {}
         if name is not None:

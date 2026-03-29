@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List  # noqa: UP035
 
 from kraken._transport import Transport
 from kraken.models import Skill
@@ -29,7 +29,7 @@ class Skills:
         name: str,
         content: str,
         *,
-        tags: list[str] | None = None,
+        tags: List[str] | None = None,  # noqa: UP006
     ) -> Skill:
         """Create a new skill."""
         payload: dict[str, Any] = {"name": name, "content": content}
@@ -48,7 +48,7 @@ class Skills:
         skill_id: str,
         *,
         content: str | None = None,
-        tags: list[str] | None = None,
+        tags: List[str] | None = None,  # noqa: UP006
     ) -> Skill:
         """Update a skill's content or tags."""
         payload: dict[str, Any] = {}

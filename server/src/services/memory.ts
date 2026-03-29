@@ -523,7 +523,7 @@ export async function queryMemory(input: {
   });
 
   // Collect graph context from all matched entities (not just the first one)
-  let graphNodes: Array<{ id: string; name: string; type: string; properties: Record<string, unknown>; createdAt: string }> = [];
+  const graphNodes: Array<{ id: string; name: string; type: string; properties: Record<string, unknown>; createdAt: string }> = [];
   let communitySummaries: string[] = [];
 
   if (uniqueCandidates.length > 0) {
