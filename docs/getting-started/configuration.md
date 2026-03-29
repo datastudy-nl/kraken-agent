@@ -98,6 +98,17 @@ Control how Kraken manages its context window and memory retrieval.
 
 ---
 
+## Git & GitHub
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KRAKEN_GIT_TOKEN` | *(none)* | GitHub personal access token. Enables private repo cloning, git push, and PR creation. Requires `repo` scope for full functionality. |
+
+!!! tip "Token permissions"
+    For the full PR workflow (clone → edit → push → create PR), the token needs the `repo` scope. For read-only access to public repos, no token is needed.
+
+---
+
 ## Background Jobs
 
 | Variable | Default | Description |

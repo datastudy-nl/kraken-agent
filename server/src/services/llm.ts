@@ -40,7 +40,7 @@ export async function runChat(args: GenerateArgs): Promise<{
     system: args.system,
     messages: args.messages,
     tools: args.tools,
-    maxSteps: args.tools ? (args.maxSteps ?? 16) : undefined,
+    maxSteps: args.tools ? (args.maxSteps ?? 25) : undefined,
   });
 
   return {

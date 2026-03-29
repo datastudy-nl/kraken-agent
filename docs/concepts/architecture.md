@@ -116,6 +116,17 @@ Docker containers for isolated code execution. When the agent needs to run code:
 - Workspace files mounted at a known path
 - Container destroyed after execution
 
+### Git & GitHub Integration
+
+The agent can interact with Git repositories and the GitHub API directly:
+
+- **Clone** any public or private repo (via `KRAKEN_GIT_TOKEN`)
+- **Analyze** code with search, diff, log, and branch inspection
+- **Modify** code, commit changes, and push to feature branches
+- **Create pull requests** via the GitHub REST API with full descriptions
+- **Read files** directly from GitHub repos without cloning (via Contents API)
+- All authentication is handled server-side — tokens are never exposed to the LLM
+
 ---
 
 ## Data Flow: What Happens When You Send a Message

@@ -632,7 +632,7 @@ export function getBuiltinTools(sessionId: string) {
 
     git_commit: tool({
       description:
-        "Stage files and create a Git commit. Can stage all changes or specific files.",
+        "Stage files and create a Git commit. Can stage all changes or specific files. Automatically configures git user identity in the sandbox.",
       parameters: z.object({
         directory: z.string().describe("Repository directory in the workspace"),
         message: z.string().describe("Commit message"),
@@ -640,6 +640,8 @@ export function getBuiltinTools(sessionId: string) {
       }),
       execute: async ({ directory, message, files }) => {
         try {
+          // Ensure git identity is configured (sandbox containers are ephemeral)
+          await shellExec(sessionId, `cd '${directory}' && git config user.email 'kraken-agent@users.noreply.github.com' && git config user.name 'Kraken Agent'`, 5000);
           // Sanitize commit message for shell
           const safeMsg = message.replace(/'/g, "'\\''");
           const cmd = `cd '${directory}' && git add ${files} && git commit -m '${safeMsg}'`;
@@ -714,6 +716,283 @@ export function getBuiltinTools(sessionId: string) {
           };
         } catch (err: any) {
           return { stdout: "", stderr: err.message, exit_code: -1 };
+        }
+      },
+    }),
+
+    git_push: tool({
+      description:
+        "Push local commits to a remote Git repository. Requires a git token configured server-side for authentication. Always create and switch to a feature branch before pushing — never push directly to main/master.",
+      parameters: z.object({
+        directory: z.string().describe("Repository directory in the workspace"),
+        remote: z.string().describe("Remote name (usually 'origin')"),
+        branch: z.string().describe("Branch name to push (e.g. 'feature/improve-tools')"),
+        force: z.string().describe("'true' to force push (overwrite remote branch), 'false' for normal push. Almost always use 'false'."),
+        set_upstream: z.string().describe("'true' to set upstream tracking (-u flag), 'false' otherwise. Use 'true' when pushing a new branch for the first time."),
+      }),
+      execute: async ({ directory, remote, branch, force, set_upstream }) => {
+        try {
+          if (!config.KRAKEN_GIT_TOKEN) {
+            return { stdout: "", stderr: "KRAKEN_GIT_TOKEN is not configured. Cannot push without authentication.", exit_code: -1 };
+          }
+
+          // Inject token into remote URL for authenticated push
+          const getUrlCmd = `cd '${directory}' && git remote get-url '${remote}'`;
+          const urlResult = await shellExec(sessionId, getUrlCmd, 5000);
+          const remoteUrl = urlResult.stdout.trim();
+
+          if (!remoteUrl.startsWith("https://")) {
+            return { stdout: "", stderr: "Only HTTPS remotes are supported for authenticated push.", exit_code: -1 };
+          }
+
+          // Set authenticated remote URL temporarily
+          const parsed = new URL(remoteUrl);
+          parsed.username = "x-access-token";
+          parsed.password = config.KRAKEN_GIT_TOKEN;
+          const authUrl = parsed.toString();
+
+          // Configure git identity if not already set
+          await shellExec(sessionId, `cd '${directory}' && git config user.email 'kraken-agent@users.noreply.github.com' && git config user.name 'Kraken Agent'`, 5000);
+
+          const setUrlCmd = `cd '${directory}' && git remote set-url '${remote}' '${authUrl}'`;
+          await shellExec(sessionId, setUrlCmd, 5000);
+
+          try {
+            const forceFlag = force === "true" ? "--force" : "";
+            const upstreamFlag = set_upstream === "true" ? "-u" : "";
+            const pushCmd = `cd '${directory}' && git push ${forceFlag} ${upstreamFlag} '${remote}' '${branch}' 2>&1`;
+            const result = await shellExec(sessionId, pushCmd, 30000);
+
+            // Scrub token from output
+            const cleanStdout = result.stdout.replace(/x-access-token:[^@]+@/g, "***@");
+            const cleanStderr = result.stderr.replace(/x-access-token:[^@]+@/g, "***@");
+            return {
+              stdout: cleanStdout.slice(0, 4000),
+              stderr: cleanStderr.slice(0, 2000),
+              exit_code: result.exitCode,
+            };
+          } finally {
+            // Always restore the original (non-authenticated) remote URL
+            const resetCmd = `cd '${directory}' && git remote set-url '${remote}' '${remoteUrl}'`;
+            await shellExec(sessionId, resetCmd, 5000).catch(() => {});
+          }
+        } catch (err: any) {
+          const cleanMsg = (err.message || "").replace(/x-access-token:[^@]+@/g, "***@");
+          return { stdout: "", stderr: cleanMsg, exit_code: -1 };
+        }
+      },
+    }),
+
+    github_create_pr: tool({
+      description:
+        "Create a pull request on GitHub via the GitHub REST API. The branch must be pushed to the remote first using git_push. Requires KRAKEN_GIT_TOKEN with 'repo' scope.",
+      parameters: z.object({
+        owner: z.string().describe("Repository owner (GitHub username or org, e.g. 'octocat')"),
+        repo: z.string().describe("Repository name (e.g. 'my-project')"),
+        title: z.string().describe("Pull request title"),
+        body: z.string().describe("Pull request description in Markdown. Explain what changed and why."),
+        head: z.string().describe("The branch containing the changes (e.g. 'feature/improve-tools')"),
+        base: z.string().describe("The branch to merge into (e.g. 'main')"),
+      }),
+      execute: async ({ owner, repo, title, body, head, base }) => {
+        try {
+          if (!config.KRAKEN_GIT_TOKEN) {
+            return { error: "KRAKEN_GIT_TOKEN is not configured. Cannot create PR without authentication." };
+          }
+
+          const response = await fetch(
+            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${config.KRAKEN_GIT_TOKEN}`,
+                Accept: "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "User-Agent": "KrakenAgent/1.0",
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+              body: JSON.stringify({ title, body, head, base }),
+              signal: AbortSignal.timeout(15000),
+            },
+          );
+
+          const data = (await response.json()) as Record<string, unknown>;
+
+          if (!response.ok) {
+            return {
+              error: `GitHub API returned ${response.status}: ${(data.message as string) || JSON.stringify(data)}`,
+              status: response.status,
+            };
+          }
+
+          return {
+            status: "created",
+            pr_number: data.number,
+            pr_url: data.html_url,
+            title: data.title,
+            state: data.state,
+          };
+        } catch (err: any) {
+          return { error: err.message };
+        }
+      },
+    }),
+
+    github_list_prs: tool({
+      description:
+        "List open pull requests on a GitHub repository. Useful for checking if a PR already exists for a branch before creating a new one.",
+      parameters: z.object({
+        owner: z.string().describe("Repository owner (GitHub username or org)"),
+        repo: z.string().describe("Repository name"),
+        state: z.string().describe("'open', 'closed', or 'all' (default: 'open')"),
+        head: z.string().describe("Filter by head branch (e.g. 'owner:feature-branch'). Use '' for no filter."),
+      }),
+      execute: async ({ owner, repo, state, head }) => {
+        try {
+          if (!config.KRAKEN_GIT_TOKEN) {
+            return { error: "KRAKEN_GIT_TOKEN is not configured." };
+          }
+
+          const params = new URLSearchParams({ state: state || "open", per_page: "10" });
+          if (head) params.set("head", head);
+
+          const response = await fetch(
+            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${params}`,
+            {
+              headers: {
+                Authorization: `Bearer ${config.KRAKEN_GIT_TOKEN}`,
+                Accept: "application/vnd.github+json",
+                "User-Agent": "KrakenAgent/1.0",
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+              signal: AbortSignal.timeout(15000),
+            },
+          );
+
+          const data = (await response.json()) as Array<Record<string, unknown>>;
+
+          if (!response.ok) {
+            return {
+              error: `GitHub API returned ${response.status}`,
+              status: response.status,
+            };
+          }
+
+          return {
+            count: data.length,
+            pull_requests: data.map((pr) => ({
+              number: pr.number,
+              title: pr.title,
+              state: pr.state,
+              head_branch: (pr.head as Record<string, unknown>)?.ref,
+              base_branch: (pr.base as Record<string, unknown>)?.ref,
+              url: pr.html_url,
+              author: (pr.user as Record<string, unknown>)?.login,
+            })),
+          };
+        } catch (err: any) {
+          return { error: err.message };
+        }
+      },
+    }),
+
+    github_get_file: tool({
+      description:
+        "Read a file's content directly from a GitHub repository without cloning. Returns the file content, SHA, and metadata. Useful for quickly reading specific files from any public or private repo.",
+      parameters: z.object({
+        owner: z.string().describe("Repository owner (GitHub username or org)"),
+        repo: z.string().describe("Repository name"),
+        path: z.string().describe("File path in the repository (e.g. 'src/index.ts', 'README.md')"),
+        ref: z.string().describe("Branch, tag, or commit SHA to read from. Use '' for default branch."),
+      }),
+      execute: async ({ owner, repo, path: filePath, ref }) => {
+        try {
+          const token = config.KRAKEN_GIT_TOKEN;
+          const headers: Record<string, string> = {
+            Accept: "application/vnd.github+json",
+            "User-Agent": "KrakenAgent/1.0",
+            "X-GitHub-Api-Version": "2022-11-28",
+          };
+          if (token) headers.Authorization = `Bearer ${token}`;
+
+          const params = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+          const response = await fetch(
+            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${filePath}${params}`,
+            { headers, signal: AbortSignal.timeout(15000) },
+          );
+
+          const data = (await response.json()) as Record<string, unknown>;
+
+          if (!response.ok) {
+            return { error: `GitHub API returned ${response.status}: ${(data.message as string) || "Unknown error"}` };
+          }
+
+          if (data.type !== "file") {
+            return { error: `Path '${filePath}' is a ${data.type}, not a file. Use github_list_files for directories.` };
+          }
+
+          // Decode base64 content
+          const content = Buffer.from(data.content as string, "base64").toString("utf-8");
+          return {
+            path: data.path,
+            sha: data.sha,
+            size: data.size,
+            content: content.slice(0, 32000),
+            truncated: content.length > 32000,
+          };
+        } catch (err: any) {
+          return { error: err.message };
+        }
+      },
+    }),
+
+    github_list_files: tool({
+      description:
+        "List files and directories in a GitHub repository path without cloning. Returns names, types, and sizes. Use this to explore repo structure before reading specific files.",
+      parameters: z.object({
+        owner: z.string().describe("Repository owner (GitHub username or org)"),
+        repo: z.string().describe("Repository name"),
+        path: z.string().describe("Directory path in the repository. Use '' for repo root."),
+        ref: z.string().describe("Branch, tag, or commit SHA. Use '' for default branch."),
+      }),
+      execute: async ({ owner, repo, path: dirPath, ref }) => {
+        try {
+          const token = config.KRAKEN_GIT_TOKEN;
+          const headers: Record<string, string> = {
+            Accept: "application/vnd.github+json",
+            "User-Agent": "KrakenAgent/1.0",
+            "X-GitHub-Api-Version": "2022-11-28",
+          };
+          if (token) headers.Authorization = `Bearer ${token}`;
+
+          const params = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+          const apiPath = dirPath ? `/${dirPath}` : "";
+          const response = await fetch(
+            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents${apiPath}${params}`,
+            { headers, signal: AbortSignal.timeout(15000) },
+          );
+
+          const data = (await response.json()) as unknown;
+
+          if (!response.ok) {
+            return { error: `GitHub API returned ${response.status}: ${((data as Record<string, unknown>).message as string) || "Unknown error"}` };
+          }
+
+          if (!Array.isArray(data)) {
+            return { error: `Path '${dirPath}' is a file, not a directory. Use github_get_file to read it.` };
+          }
+
+          return {
+            count: data.length,
+            items: data.map((item: Record<string, unknown>) => ({
+              name: item.name,
+              type: item.type,
+              size: item.size,
+              path: item.path,
+            })),
+          };
+        } catch (err: any) {
+          return { error: err.message };
         }
       },
     }),
