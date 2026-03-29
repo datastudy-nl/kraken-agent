@@ -207,9 +207,9 @@ export async function writeFileInSandbox(
   if (path.isAbsolute(normalized)) {
     throw new Error("Absolute paths not allowed");
   }
-  const fullPath = path.join(workspacePath(sessionId), normalized);
-  // Double-check the resolved path is still inside workspace
-  if (!fullPath.startsWith(workspacePath(sessionId))) {
+  const base = path.resolve(workspacePath(sessionId));
+  const fullPath = path.resolve(base, normalized);
+  if (fullPath !== base && !fullPath.startsWith(base + path.sep)) {
     throw new Error("Path traversal detected");
   }
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
@@ -227,8 +227,9 @@ export async function readFileFromSandbox(
   if (path.isAbsolute(normalized)) {
     throw new Error("Absolute paths not allowed");
   }
-  const fullPath = path.join(workspacePath(sessionId), normalized);
-  if (!fullPath.startsWith(workspacePath(sessionId))) {
+  const base = path.resolve(workspacePath(sessionId));
+  const fullPath = path.resolve(base, normalized);
+  if (fullPath !== base && !fullPath.startsWith(base + path.sep)) {
     throw new Error("Path traversal detected");
   }
   return fs.readFile(fullPath, "utf-8");
@@ -247,8 +248,9 @@ export async function listFilesInSandbox(
     if (path.isAbsolute(normalized)) {
       throw new Error("Absolute paths not allowed");
     }
-    targetPath = path.join(targetPath, normalized);
-    if (!targetPath.startsWith(workspacePath(sessionId))) {
+    const base = path.resolve(workspacePath(sessionId));
+    targetPath = path.resolve(base, normalized);
+    if (targetPath !== base && !targetPath.startsWith(base + path.sep)) {
       throw new Error("Path traversal detected");
     }
   }

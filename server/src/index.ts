@@ -21,7 +21,25 @@ const app = new Hono();
 
 // --- Middleware ---
 app.use("*", logger());
-app.use("*", cors());
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      const allowed = config.KRAKEN_ALLOWED_ORIGINS
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      // If no origins configured, allow all (development mode)
+      if (allowed.length === 0) return origin;
+
+      // Non-browser requests (no Origin header)
+      if (!origin) return origin;
+
+      return allowed.includes(origin) ? origin : "";
+    },
+  }),
+);
 
 // --- Routes ---
 app.route("/health", healthRouter);
@@ -40,6 +58,9 @@ app.route("/v1/skills", skillsRouter);
 app.route("/v1/tools", toolsRouter);
 app.route("/v1/identity", identityRouter);
 app.route("/v1/schedules", schedulesRouter);
+// Workspace endpoints (/:id/workspace/*) are mounted under the same /v1/sessions
+// prefix because they are session-scoped operations, but live in a separate router
+// for code organization. See api/workspaces.ts.
 app.route("/v1/sessions", workspacesRouter);
 
 // --- Start ---

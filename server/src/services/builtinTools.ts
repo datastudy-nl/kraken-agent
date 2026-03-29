@@ -139,7 +139,7 @@ export function getBuiltinTools(sessionId: string) {
         "The fact is stored permanently and can be recalled from ANY conversation or session.",
       parameters: z.object({
         fact: z.string().describe("The fact to remember, stated clearly and completely. Include all relevant context. E.g. 'User's door code is 4821' not just '4821'."),
-        tags: z.array(z.string()).optional().describe("Optional tags for categorization, e.g. ['code', 'security'] or ['preference', 'food']"),
+        tags: z.array(z.string()).describe("Tags for categorization, e.g. ['code', 'security'] or ['preference', 'food']"),
       }),
       execute: async ({ fact, tags }) => {
         const result = await storeExplicitMemory(sessionId, fact, tags);
@@ -1329,9 +1329,7 @@ export function getBuiltinTools(sessionId: string) {
     browser_snapshot: tool({
       description:
         "Get a text snapshot of the current browser page using the accessibility tree. This returns a structured text representation of the page that you can reason about — headings, links, buttons, form fields, text content. Much more useful than raw HTML for understanding page content.",
-      parameters: z.object({
-        _: z.string().describe("Unused — pass empty string").default(""),
-      }),
+      parameters: z.object({}),
       execute: async () => {
         try {
           const result = await getPageSnapshot(sessionId);
@@ -1349,9 +1347,7 @@ export function getBuiltinTools(sessionId: string) {
     browser_screenshot: tool({
       description:
         "Take a PNG screenshot of the current browser page. Returns a base64-encoded image. Use browser_snapshot first for text-based analysis — use this only when visual layout matters.",
-      parameters: z.object({
-        _: z.string().describe("Unused — pass empty string").default(""),
-      }),
+      parameters: z.object({}),
       execute: async () => {
         try {
           const base64 = await screenshotPage(sessionId);
@@ -1419,9 +1415,7 @@ export function getBuiltinTools(sessionId: string) {
     browser_close: tool({
       description:
         "Close the browser tab for this session. Use when you're done browsing to free resources. A new tab will be created automatically if you navigate again.",
-      parameters: z.object({
-        _: z.string().describe("Unused — pass empty string").default(""),
-      }),
+      parameters: z.object({}),
       execute: async () => {
         try {
           await closePage(sessionId);

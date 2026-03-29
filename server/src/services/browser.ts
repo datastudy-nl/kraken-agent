@@ -9,6 +9,7 @@
  */
 import { chromium, type Browser, type Page, type Route } from "playwright-core";
 import { config } from "../config.js";
+import dns from "node:dns/promises";
 
 let browser: Browser | null = null;
 const pages = new Map<string, Page>();
@@ -57,6 +58,51 @@ export function isBlockedUrl(raw: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * Returns true if the IP address is private, loopback, link-local, or metadata.
+ */
+function isPrivateIP(ip: string): boolean {
+  // IPv6 loopback
+  if (ip === "::1" || ip === "0:0:0:0:0:0:0:1") return true;
+
+  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1)
+  const v4Mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  const v4 = v4Mapped ? v4Mapped[1] : ip;
+
+  const parts = v4.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => isNaN(p))) return false;
+  const [a, b] = parts;
+
+  if (a === 127) return true;                           // 127.0.0.0/8
+  if (a === 10) return true;                            // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true;     // 172.16.0.0/12
+  if (a === 192 && b === 168) return true;              // 192.168.0.0/16
+  if (a === 169 && b === 254) return true;              // 169.254.0.0/16 link-local
+  if (a === 0) return true;                             // 0.0.0.0/8
+
+  return false;
+}
+
+/**
+ * Resolve the hostname and verify none of the resolved IPs are private.
+ * Guards against DNS rebinding attacks.
+ */
+async function isBlockedAfterDNS(hostname: string): Promise<boolean> {
+  try {
+    const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
+    const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
+    const all = [...addresses, ...addresses6];
+
+    // If DNS resolves to nothing, allow (may be a CNAME or other record type)
+    if (all.length === 0) return false;
+
+    return all.some(isPrivateIP);
+  } catch {
+    // DNS resolution failed — allow (Playwright will fail with a clear error)
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +167,12 @@ export async function navigateTo(
 ): Promise<{ url: string; title: string; status: number | null }> {
   if (isBlockedUrl(url)) {
     throw new Error(`Navigation blocked: ${url} targets a private or restricted address`);
+  }
+
+  // Post-DNS resolution check to prevent DNS rebinding attacks
+  const parsed = new URL(url);
+  if (await isBlockedAfterDNS(parsed.hostname)) {
+    throw new Error(`Navigation blocked: ${url} resolves to a private IP address`);
   }
 
   const page = await getOrCreatePage(sessionId);

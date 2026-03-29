@@ -128,7 +128,7 @@ export async function updateSchedule(
   if (input.name !== undefined) updates.name = input.name;
   if (input.description !== undefined) updates.description = input.description;
   if (input.taskPrompt !== undefined) updates.taskPrompt = input.taskPrompt;
-  if (input.enabled !== undefined) updates.enabled = input.enabled ? 1 : 0;
+  if (input.enabled !== undefined) updates.enabled = input.enabled;
   if (input.maxRuns !== undefined) updates.maxRuns = input.maxRuns;
   if (input.cronExpression !== undefined) {
     updates.cronExpression = input.cronExpression;
@@ -164,7 +164,7 @@ export async function getDueSchedules() {
     .from(schema.schedules)
     .where(
       and(
-        eq(schema.schedules.enabled, 1),
+        eq(schema.schedules.enabled, true),
         lte(schema.schedules.nextRunAt, now),
       ),
     )
@@ -273,7 +273,7 @@ export async function executeSchedule(scheduleId: string): Promise<{
         ? null
         : getNextCronDate(schedule.cron_expression),
       runCount: newRunCount,
-      enabled: reachedMax || isOneShot ? 0 : 1,
+      enabled: reachedMax || isOneShot ? false : true,
       updatedAt: new Date(),
     })
     .where(eq(schema.schedules.id, scheduleId));
@@ -395,7 +395,7 @@ function formatSchedule(row: typeof schema.schedules.$inferSelect) {
     cron_expression: row.cronExpression,
     task_prompt: row.taskPrompt,
     origin_session_id: row.originSessionId,
-    enabled: row.enabled === 1,
+    enabled: row.enabled,
     last_run_at: row.lastRunAt?.toISOString() ?? null,
     next_run_at: row.nextRunAt?.toISOString() ?? null,
     run_count: row.runCount,

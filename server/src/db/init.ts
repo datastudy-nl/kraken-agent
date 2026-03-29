@@ -183,7 +183,7 @@ export async function initPostgresSchema(): Promise<void> {
       cron_expression text NOT NULL,
       task_prompt text NOT NULL,
       origin_session_id uuid REFERENCES sessions(id) ON DELETE SET NULL,
-      enabled integer NOT NULL DEFAULT 1,
+      enabled boolean NOT NULL DEFAULT true,
       last_run_at timestamptz,
       next_run_at timestamptz,
       run_count integer NOT NULL DEFAULT 0,
@@ -198,5 +198,20 @@ export async function initPostgresSchema(): Promise<void> {
   `);
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS schedules_enabled_idx ON schedules(enabled)
+  `);
+
+  // --- Migrate schedules.enabled from integer to boolean ---
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'schedules' AND column_name = 'enabled' AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE schedules
+          ALTER COLUMN enabled DROP DEFAULT,
+          ALTER COLUMN enabled SET DATA TYPE boolean USING (enabled = 1),
+          ALTER COLUMN enabled SET DEFAULT true;
+      END IF;
+    END $$
   `);
 }

@@ -1,7 +1,14 @@
 /**
  * Input security scanning for prompt injection and harmful content.
- * Lightweight pattern-based detection for user-facing text fields
+ *
+ * IMPORTANT: This is a best-effort heuristic layer only. Regex-based pattern
+ * matching is trivially evadable (spacing, encoding, indirection, multilingual
+ * phrasing). Do NOT rely on this as a real security boundary. It exists to
+ * catch casual/accidental injection attempts in user-facing text fields
  * (SOUL.md, AGENTS.md, user model, skill content).
+ *
+ * For defense-in-depth, combine with: output filtering, model-level guardrails,
+ * privilege separation, and careful prompt architecture.
  */
 
 const INJECTION_PATTERNS = [

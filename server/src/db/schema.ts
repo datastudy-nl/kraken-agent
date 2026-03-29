@@ -9,7 +9,15 @@ import {
   index,
   uniqueIndex,
   boolean,
+  customType,
 } from "drizzle-orm/pg-core";
+
+// tsvector column type — populated by a trigger in init.ts, not by app code
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // --- Sessions ---
 export const sessions = pgTable("sessions", {
@@ -39,12 +47,14 @@ export const messages = pgTable(
     model: text("model"),
     tokenCount: integer("token_count"),
     embedding: vector("embedding", { dimensions: 1536 }),
+    searchVector: tsvector("search_vector"), // populated by trigger — see init.ts
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     metadata: jsonb("metadata").notNull().default({}),
   },
   (t) => [
     index("messages_session_idx").on(t.sessionId),
     index("messages_created_idx").on(t.createdAt),
+    index("messages_search_idx").using("gin", t.searchVector),
   ],
 );
 
@@ -100,7 +110,7 @@ export const schedules = pgTable(
     originSessionId: uuid("origin_session_id").references(() => sessions.id, {
       onDelete: "set null",
     }),
-    enabled: integer("enabled").notNull().default(1), // 1 = active, 0 = paused
+    enabled: boolean("enabled").notNull().default(true),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
     runCount: integer("run_count").notNull().default(0),

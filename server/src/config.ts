@@ -48,6 +48,9 @@ const envSchema = z.object({
   // Git (optional — enables private repo cloning in sandbox)
   KRAKEN_GIT_TOKEN: z.string().optional(),
 
+  // CORS
+  KRAKEN_ALLOWED_ORIGINS: z.string().default(""),
+
   // Browser automation
   KRAKEN_BROWSER_CDP_URL: z.string().default("ws://chromium:3000"),
   KRAKEN_BROWSER_TIMEOUT_MS: z.coerce.number().default(30000),

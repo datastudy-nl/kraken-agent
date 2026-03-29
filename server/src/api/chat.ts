@@ -201,10 +201,11 @@ chatRouter.post(
     const completionId = `chatcmpl-${crypto.randomUUID()}`;
     const created = Math.floor(Date.now() / 1000);
 
-    // Resolve session if session_key provided, otherwise create a transient one
+    // Resolve session if session_key provided, otherwise create a fresh transient one.
+    // IMPORTANT: do NOT fall back to a shared key — that leaks memory across users.
     const session = body.session_key
       ? await resolveSession({ sessionKey: body.session_key })
-      : await resolveSession({ sessionKey: `openai-compat-${body.user ?? "default"}` });
+      : await resolveSession({});
     const sessionId = session.id;
 
     // Separate system messages from conversation
