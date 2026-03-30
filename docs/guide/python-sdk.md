@@ -6,7 +6,7 @@ description: Type-safe Python client for chat, memory, skills, and identity
 
 # Python SDK
 
-The official Python SDK for Kraken Agent. Type-safe, async-ready, and designed for production use.
+The official Python SDK for Kraken Agent. Type-safe, async-ready, and designed for production use. It includes first-class chat, memory, tools, identity, and schedule management.
 
 ## Installation
 
@@ -346,6 +346,30 @@ client.tools.delete(tool.id)
 ```
 
 ---
+
+## Schedules
+
+```python
+# List schedules
+schedules = client.schedules.list(limit=20, offset=0)
+
+# Create a recurring schedule
+schedule = client.schedules.create(
+    "daily-recap",
+    "Summarize yesterday's activity",
+    "0 8 * * *",
+    origin_session_id="ops-session",
+    max_runs=30,
+)
+
+# Update or pause
+client.schedules.update(schedule.id, enabled=False)
+
+# Delete
+client.schedules.delete(schedule.id)
+```
+
+The async client exposes the same surface via `await client.schedules.create(...)`.
 
 ## Identity
 

@@ -18,7 +18,7 @@
 
 Kraken is a self-hosted AI assistant that builds a **knowledge graph** of everything you tell it. Unlike stateless LLM wrappers, Kraken actually remembers — your projects, preferences, workflows, and goals — across every platform you connect (Discord, Telegram, CLI, or any HTTP client).
 
-This package is the **official Python SDK**. It gives you a type-safe, batteries-included client for chat, memory, sessions, skills, and identity management.
+This package is the **official Python SDK**. It gives you a type-safe, batteries-included client for chat, memory, sessions, skills, schedules, and identity management.
 
 ### Why use this SDK?
 
@@ -26,6 +26,7 @@ This package is the **official Python SDK**. It gives you a type-safe, batteries
 - **Session routing** — stable `session_key`-based conversations the server owns, not your client
 - **Streaming** — real-time token streaming with a simple `for chunk in ...` loop
 - **Self-improving skills** — the agent learns procedures from complex tasks and reuses them
+- **Scheduled automation** — create recurring task runners and inspect upcoming jobs from Python
 - **Identity system** — editable personality (`SOUL.md`) and an auto-maintained model of *you*
 - **Fully typed** — Pydantic models for every request and response, IDE autocompletion everywhere
 - **Async-ready** — optional HTTP/2 support via `pip install kraken-agent[async]`
@@ -186,6 +187,26 @@ for skill in client.skills.list(tag="git"):
 ```
 
 ---
+
+## Schedules
+
+Kraken supports recurring task execution through the schedules API, and the Python SDK can manage those directly.
+
+```python
+schedule = client.schedules.create(
+    "daily-recap",
+    "Summarize yesterday's session activity",
+    "0 8 * * *",
+    origin_session_id="ops-session",
+    max_runs=30,
+)
+
+for item in client.schedules.list():
+    print(item.name, item.next_run_at)
+
+updated = client.schedules.update(schedule.id, enabled=False)
+print(updated.enabled)
+```
 
 ## Identity
 

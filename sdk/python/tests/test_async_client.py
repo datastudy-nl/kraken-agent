@@ -7,6 +7,7 @@ import respx
 from kraken.async_client import AsyncKrakenClient
 from kraken.async_identity import AsyncIdentity
 from kraken.async_memory import AsyncMemory
+from kraken.async_schedules import AsyncSchedules
 from kraken.async_sessions import AsyncSessions
 from kraken.async_skills import AsyncSkills
 from kraken.async_tools import AsyncTools
@@ -85,3 +86,4 @@ class TestAsyncSubClients:
         assert isinstance(async_client.skills, AsyncSkills)
         assert isinstance(async_client.tools, AsyncTools)
         assert isinstance(async_client.identity, AsyncIdentity)
+        assert isinstance(async_client.schedules, AsyncSchedules)

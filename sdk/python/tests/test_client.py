@@ -155,3 +155,7 @@ class TestSubClients:
     def test_has_identity(self, client):
         from kraken.identity import Identity
         assert isinstance(client.identity, Identity)
+
+    def test_has_schedules(self, client):
+        from kraken.schedules import Schedules
+        assert isinstance(client.schedules, Schedules)

@@ -147,3 +147,20 @@ class HealthStatus(BaseModel):
     status: str
     version: str
     uptime: float
+
+
+class Schedule(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    cron_expression: str
+    task_prompt: str
+    origin_session_id: str | None = None
+    enabled: bool = True
+    max_runs: int | None = None
+    run_count: int = 0
+    last_run_at: datetime | None = None
+    next_run_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime

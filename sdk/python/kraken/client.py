@@ -9,6 +9,7 @@ from kraken._transport import Transport
 from kraken.identity import Identity
 from kraken.memory import Memory
 from kraken.models import ChatResponse, HealthStatus
+from kraken.schedules import Schedules
 from kraken.sessions import Sessions
 from kraken.skills import Skills
 from kraken.tools import Tools
@@ -61,6 +62,7 @@ class KrakenClient:
         self.skills = Skills(self._transport)
         self.tools = Tools(self._transport)
         self.identity = Identity(self._transport)
+        self.schedules = Schedules(self._transport)
 
     # --- Chat (top-level convenience) ---
 
