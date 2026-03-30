@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import {
   createEntity,
@@ -13,12 +13,11 @@ import {
   upsertCommunity,
 } from "./graph.js";
 import {
-  compressUserModel,
   createEmbedding,
   dreamFromConversationWindow,
   extractMemoryFromConversation,
 } from "./llm.js";
-import { getUserModel, setUserModel } from "./identity.js";
+import { setUserModel } from "./identity.js";
 import { createTool, listTools } from "./tools.js";
 import { createSkill, listSkills } from "./skills.js";
 import { hybridSearch } from "./vector.js";
@@ -33,9 +32,9 @@ export type MemoryItemKind =
   | "identity"
   | "constraint"
   | "temporary";
-export type MemoryItemStatus = "active" | "superseded" | "stale" | "archived";
+export type MemoryItemStatus = "active" | "candidate" | "superseded" | "stale" | "archived" | "contradicted";
 export type MemoryItemScope = "global" | "user" | "session" | "task";
-export type MemoryItemSource = "user_explicit" | "assistant_inferred" | "compaction_summary";
+export type MemoryItemSource = "user_explicit" | "assistant_inferred" | "graph_extracted" | "compaction_summary" | "dream_inference";
 
 interface MemoryItemRecord {
   id: string;
@@ -56,6 +55,12 @@ interface MemoryItemRecord {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+}
+
+const DURABLE_USER_MODEL_KINDS: MemoryItemKind[] = ["identity", "preference", "goal", "constraint"];
+
+function normalizeMemoryText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function classifyExplicitMemory(fact: string, tags?: string[]): {
@@ -90,14 +95,29 @@ function classifyExplicitMemory(fact: string, tags?: string[]): {
   return { kind: "fact", scope: "user", importance: 0.8, expiresAt: null };
 }
 
-function scoreMemoryItem(item: MemoryItemRecord): number {
+function inferScopeFromQuery(query: string): MemoryItemScope | null {
+  const q = query.toLowerCase();
+  if (/\bthis session|in this chat|just now\b/.test(q)) return "session";
+  if (/\bproject|repo|branch|codebase|implementation\b/.test(q)) return "session";
+  if (/\bgoal|preference|who am i|what do you know about me|remember\b/.test(q)) return "user";
+  return null;
+}
+
+function scoreMemoryItem(item: MemoryItemRecord, query: string, expectedScope?: MemoryItemScope | null): number {
   const now = Date.now();
   const createdAgeDays = Math.max(0, (now - item.createdAt.getTime()) / (1000 * 60 * 60 * 24));
   const freshnessPenalty = Math.min(createdAgeDays / 365, 0.35);
   const reuseBonus = Math.min(item.reuseCount * 0.05, 0.25);
   const retrievalBonus = item.lastRetrievedAt ? 0.05 : 0;
   const expiryPenalty = item.expiresAt && item.expiresAt.getTime() < now ? 0.5 : 0;
-  return item.importance / 100 + item.confidence / 100 + reuseBonus + retrievalBonus - freshnessPenalty - expiryPenalty;
+  const queryNorm = normalizeMemoryText(query);
+  const contentNorm = normalizeMemoryText(item.content);
+  const exactMatchBonus = contentNorm.includes(queryNorm) || queryNorm.includes(contentNorm) ? 0.2 : 0;
+  const scopeBonus = expectedScope && item.scope === expectedScope ? 0.12 : 0;
+  const sourceBonus = item.sourceType === "user_explicit" ? 0.15 : item.sourceType === "assistant_inferred" ? 0.03 : 0;
+  const statusPenalty = item.status === "candidate" ? 0.2 : 0;
+
+  return item.importance / 100 + item.confidence / 100 + reuseBonus + retrievalBonus + exactMatchBonus + scopeBonus + sourceBonus - freshnessPenalty - expiryPenalty - statusPenalty;
 }
 
 async function touchMemoryItems(ids: string[]): Promise<void> {
@@ -109,19 +129,20 @@ async function touchMemoryItems(ids: string[]): Promise<void> {
       lastRetrievedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(sql`${schema.memoryItems.id} = ANY(${ids})`);
+    .where(inArray(schema.memoryItems.id, ids));
 }
 
 async function searchMemoryItems(
   query: string,
   limit: number,
-): Promise<Array<{ id: string; content: string; timestamp: string; kind: MemoryItemKind; score: number; tags: string[] }>> {
+  scopeHint?: MemoryItemScope | null,
+): Promise<Array<{ id: string; content: string; timestamp: string; kind: MemoryItemKind; scope: MemoryItemScope; sourceType: MemoryItemSource; status: MemoryItemStatus; confidence: number; importance: number; score: number; tags: string[]; metadata: Record<string, unknown> }>> {
   const rows = await db
     .select()
     .from(schema.memoryItems)
     .where(
       and(
-        eq(schema.memoryItems.status, "active"),
+        inArray(schema.memoryItems.status, ["active", "candidate"]),
         or(isNull(schema.memoryItems.expiresAt), sql`${schema.memoryItems.expiresAt} > now()`),
         or(
           ilike(schema.memoryItems.content, `%${query}%`),
@@ -130,16 +151,22 @@ async function searchMemoryItems(
       ),
     )
     .orderBy(desc(schema.memoryItems.importance), desc(schema.memoryItems.updatedAt))
-    .limit(limit * 3);
+    .limit(limit * 4);
 
   const scored = rows
     .map((row) => ({
       id: row.id,
       content: row.content,
       timestamp: row.createdAt.toISOString(),
-      kind: row.kind,
-      score: scoreMemoryItem(row as MemoryItemRecord),
+      kind: row.kind as MemoryItemKind,
+      scope: row.scope as MemoryItemScope,
+      sourceType: row.sourceType as MemoryItemSource,
+      status: row.status as MemoryItemStatus,
+      confidence: row.confidence,
+      importance: row.importance,
+      score: scoreMemoryItem(row as MemoryItemRecord, query, scopeHint),
       tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+      metadata: (row.metadata as Record<string, unknown>) ?? {},
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
@@ -149,6 +176,23 @@ async function searchMemoryItems(
 }
 
 async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKind, scope: MemoryItemScope, replacementId: string) {
+  const normalized = normalizeMemoryText(content);
+  const rows = await db
+    .select()
+    .from(schema.memoryItems)
+    .where(
+      and(
+        eq(schema.memoryItems.status, "active"),
+        eq(schema.memoryItems.kind, kind),
+        eq(schema.memoryItems.scope, scope),
+        sql`${schema.memoryItems.id} <> ${replacementId}`,
+      ),
+    );
+
+  const rowList = Array.isArray(rows) ? rows : [];
+  const overlapping = rowList.filter((row) => normalizeMemoryText(row.content) === normalized);
+  if (overlapping.length === 0) return;
+
   await db
     .update(schema.memoryItems)
     .set({
@@ -156,15 +200,7 @@ async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKin
       supersededBy: replacementId,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(schema.memoryItems.status, "active"),
-        eq(schema.memoryItems.kind, kind),
-        eq(schema.memoryItems.scope, scope),
-        ilike(schema.memoryItems.content, `%${content}%`),
-        sql`${schema.memoryItems.id} <> ${replacementId}`,
-      ),
-    );
+    .where(inArray(schema.memoryItems.id, overlapping.map((row) => row.id)));
 }
 
 async function createMemoryItem(input: {
@@ -177,6 +213,7 @@ async function createMemoryItem(input: {
   scope?: MemoryItemScope;
   importance?: number;
   expiresAt?: Date | null;
+  status?: MemoryItemStatus;
   metadata?: Record<string, unknown>;
 }) {
   const classification = classifyExplicitMemory(input.content, input.tags);
@@ -190,7 +227,7 @@ async function createMemoryItem(input: {
     .values({
       sessionId: input.sessionId ?? null,
       kind,
-      status: "active",
+      status: input.status ?? "active",
       scope,
       sourceType: input.sourceType,
       content: input.content,
@@ -203,7 +240,9 @@ async function createMemoryItem(input: {
     })
     .returning();
 
-  await supersedeMatchingMemoryItems(input.content, kind, scope, row.id);
+  if ((input.status ?? "active") === "active") {
+    await supersedeMatchingMemoryItems(input.content, kind, scope, row.id);
+  }
 
   if (input.content.length > 20) {
     try {
@@ -215,6 +254,55 @@ async function createMemoryItem(input: {
   }
 
   return row;
+}
+
+async function rebuildUserModelFromMemory(): Promise<string> {
+  const rows = await db
+    .select()
+    .from(schema.memoryItems)
+    .where(
+      and(
+        eq(schema.memoryItems.status, "active"),
+        inArray(schema.memoryItems.kind, DURABLE_USER_MODEL_KINDS),
+        eq(schema.memoryItems.scope, "user"),
+      ),
+    )
+    .orderBy(desc(schema.memoryItems.importance), desc(schema.memoryItems.updatedAt))
+    .limit(40);
+
+  if (rows.length === 0) return "";
+
+  const grouped = new Map<MemoryItemKind, string[]>();
+  for (const row of rows) {
+    const bucket = grouped.get(row.kind as MemoryItemKind) ?? [];
+    if (!bucket.includes(row.content)) bucket.push(row.content);
+    grouped.set(row.kind as MemoryItemKind, bucket);
+  }
+
+  const sectionOrder: Array<{ kind: MemoryItemKind; title: string }> = [
+    { kind: "identity", title: "Identity" },
+    { kind: "preference", title: "Preferences" },
+    { kind: "goal", title: "Goals" },
+    { kind: "constraint", title: "Constraints" },
+  ];
+
+  const lines: string[] = [];
+  for (const section of sectionOrder) {
+    const items = grouped.get(section.kind) ?? [];
+    if (items.length === 0) continue;
+    lines.push(`## ${section.title}`);
+    for (const item of items.slice(0, 10)) {
+      lines.push(`- ${item}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
+async function refreshUserModelFromCuratedMemory(): Promise<void> {
+  const content = await rebuildUserModelFromMemory();
+  await setUserModel(content);
 }
 
 export async function createSession(input?: {
@@ -543,11 +631,15 @@ export async function storeExplicitMemory(sessionId: string, fact: string, tags?
     content: fact,
     tags,
     sourceType: "user_explicit",
+    status: "active",
     metadata: {
       messageId: messageRow.id,
       migratedFrom: "messages",
+      evidence: [{ type: "message", id: messageRow.id }],
     },
   });
+
+  await refreshUserModelFromCuratedMemory();
 
   try {
     const existing = await findEntityByName(fact.slice(0, 100));
@@ -573,7 +665,8 @@ export async function storeExplicitMemory(sessionId: string, fact: string, tags?
 }
 
 export async function recallMemories(query: string, limit: number = 10): Promise<Array<{ content: string; type: "explicit" | "episode"; timestamp: string }>> {
-  const explicitItems = await searchMemoryItems(query, Math.ceil(limit / 2));
+  const scopeHint = inferScopeFromQuery(query);
+  const explicitItems = await searchMemoryItems(query, Math.ceil(limit / 2), scopeHint);
   const explicitResults = explicitItems.map((row) => ({
     content: row.content,
     type: "explicit" as const,
@@ -595,26 +688,43 @@ export async function recallMemories(query: string, limit: number = 10): Promise
 
 export async function runMemoryMaintenance(now: Date = new Date()) {
   const staleCutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  const result = await db
-    .update(schema.memoryItems)
-    .set({ status: "stale", updatedAt: now })
+
+  const expiredRows = await db
+    .select()
+    .from(schema.memoryItems)
     .where(
       and(
         eq(schema.memoryItems.status, "active"),
-        or(
-          sql`${schema.memoryItems.expiresAt} < ${now.toISOString()}`,
-          and(
-            sql`${schema.memoryItems.importance} < 0.75`,
-            sql`${schema.memoryItems.reuseCount} = 0`,
-            sql`${schema.memoryItems.createdAt} < ${staleCutoff.toISOString()}`,
-          ),
-        ),
+        sql`${schema.memoryItems.expiresAt} IS NOT NULL`,
+        sql`${schema.memoryItems.expiresAt} < ${now.toISOString()}`,
       ),
-    )
-    .returning(),
-  ;
+    );
 
-  return { updated: result.length };
+  const weakRows = await db
+    .select()
+    .from(schema.memoryItems)
+    .where(
+      and(
+        eq(schema.memoryItems.status, "active"),
+        sql`${schema.memoryItems.importance} < 75`,
+        sql`${schema.memoryItems.reuseCount} = 0`,
+        sql`${schema.memoryItems.createdAt} < ${staleCutoff.toISOString()}`,
+      ),
+    );
+
+  const staleIds = [...new Set([...expiredRows, ...weakRows].map((row) => row.id))];
+  if (staleIds.length === 0) {
+    await refreshUserModelFromCuratedMemory();
+    return { updated: 0 };
+  }
+
+  await db
+    .update(schema.memoryItems)
+    .set({ status: "stale", updatedAt: now })
+    .where(inArray(schema.memoryItems.id, staleIds));
+
+  await refreshUserModelFromCuratedMemory();
+  return { updated: staleIds.length };
 }
 
 export async function queryMemory(input: {
@@ -626,12 +736,13 @@ export async function queryMemory(input: {
 }) {
   const mode = input.mode === "auto" ? chooseMode(input.query) : input.mode;
   const modelEntityNames = input.userModel ? extractEntityNamesFromModel(input.userModel) : [];
+  const scopeHint = inferScopeFromQuery(input.query);
 
   const [episodes, candidateEntities, globalSummaries, explicitMemories] = await Promise.all([
     searchEpisodes(input.query, input.limit),
     listEntities({ type: undefined, search: input.query, limit: input.limit }),
     mode === "global" || mode === "drift" ? getAllCommunitySummaries() : Promise.resolve([]),
-    searchMemoryItems(input.query, 5),
+    searchMemoryItems(input.query, 8, scopeHint),
   ]);
 
   let modelEntities: Array<{ id: string; name: string; type: string; properties: Record<string, unknown>; createdAt: string }> = [];
@@ -690,16 +801,42 @@ export async function queryMemory(input: {
     }
   }
 
+  const confirmedFacts = explicitMemories
+    .filter((mem) => mem.status === "active" && mem.confidence >= 80)
+    .map((mem) => ({
+      content: mem.content,
+      timestamp: mem.timestamp,
+      kind: mem.kind,
+      scope: mem.scope,
+      score: mem.score,
+      tags: mem.tags,
+      sourceType: mem.sourceType,
+    }));
+
+  const inferredMemories = explicitMemories
+    .filter((mem) => mem.status !== "active" || mem.confidence < 80)
+    .map((mem) => ({
+      content: mem.content,
+      timestamp: mem.timestamp,
+      kind: mem.kind,
+      scope: mem.scope,
+      score: mem.score,
+      tags: mem.tags,
+      sourceType: mem.sourceType,
+      status: mem.status,
+    }));
+
   const results = [
-    ...explicitMemories.map((mem) => ({ type: "memory_item", content: mem.content, kind: mem.kind, score: mem.score, tags: mem.tags })),
+    ...confirmedFacts.map((mem) => ({ type: "memory_item", ...mem })),
     ...episodes.map((episode) => ({ type: "episode", ...episode })),
-    ...graphNodes.slice(0, input.limit).map((node) => ({ type: "entity", ...node })),
+    ...graphNodes.slice(0, input.limit).map((node) => ({ ...node, type: "entity" as const })),
   ].slice(0, input.limit);
 
   return {
     mode,
     results,
-    explicitMemories: explicitMemories.map((mem) => ({ content: mem.content, timestamp: mem.timestamp, kind: mem.kind, score: mem.score, tags: mem.tags })),
+    explicitMemories: confirmedFacts,
+    inferredMemories,
     entities: uniqueCandidates.map((entity) => ({ id: entity.id, name: entity.name, type: entity.type })),
     graph: { nodes: graphNodes, edges: graphEdges },
     communities,
@@ -759,7 +896,8 @@ export async function ingestConversationToGraph(input: {
   sessionId: string;
   messages: Array<{ role: string; content: string }>;
 }) {
-  const extraction = await extractMemoryFromConversation(input.messages);
+  const conversation = input.messages.map((message) => `${message.role}: ${message.content}`).join("\n");
+  const extraction = await extractMemoryFromConversation(conversation);
   const createdEntities: Array<{ id: string; name: string; type: string }> = [];
 
   for (const entity of extraction.entities ?? []) {
@@ -791,26 +929,38 @@ export async function ingestConversationToGraph(input: {
     }
   }
 
-  if (extraction.communitySummary && createdEntities.length > 0) {
+  const extractionWithCommunity = extraction as typeof extraction & { communityName?: string; communitySummary?: string };
+
+  if (extractionWithCommunity.communitySummary && createdEntities.length > 0) {
     await upsertCommunity({
       id: crypto.randomUUID(),
-      name: extraction.communityName ?? "Conversation Cluster",
-      summary: extraction.communitySummary,
+      name: extractionWithCommunity.communityName ?? "Conversation Cluster",
+      summary: extractionWithCommunity.communitySummary,
       level: 1,
       entityIds: createdEntities.map((entity) => entity.id),
     });
   }
 
-  if (extraction.userSignals?.length) {
-    const current = await getUserModel();
-    const content = await compressUserModel(current.content, extraction.userSignals);
-    await setUserModel(content);
+  for (const signal of extraction.userSignals ?? []) {
+    await createMemoryItem({
+      sessionId: input.sessionId,
+      content: signal,
+      sourceType: "assistant_inferred",
+      status: "candidate",
+      confidence: 0.65,
+      metadata: {
+        inferredFrom: "conversation_extraction",
+      },
+    }).catch(() => undefined);
   }
+
+  await refreshUserModelFromCuratedMemory();
 
   return {
     entities: createdEntities,
     relationships: extraction.relationships ?? [],
-    communitySummary: extraction.communitySummary ?? null,
+    communitySummary: extractionWithCommunity.communitySummary ?? null,
+    affectedEntityIds: createdEntities.map((entity) => entity.id),
   };
 }
 
@@ -822,33 +972,40 @@ export async function runDreamCycle() {
     .limit(20);
 
   const ordered = [...recentMessages].reverse().map((message) => ({ role: message.role, content: message.content }));
-  const dream = await dreamFromConversationWindow(ordered);
+  const conversationText = ordered.map((message) => `${message.role}: ${message.content}`).join("\n");
+  const dream = await dreamFromConversationWindow(conversationText);
 
-  for (const skill of dream.skills ?? []) {
-    const existing = await listSkills({ search: skill.name, limit: 1 });
+  for (const skill of dream.suggestedSkills ?? []) {
+    const existing = await listSkills({ search: skill.name, tag: null });
     if (existing.skills.length === 0) {
       await createSkill({ name: skill.name, content: skill.content, tags: skill.tags ?? [] }).catch(() => undefined);
     }
   }
 
-  for (const tool of dream.tools ?? []) {
-    const existing = await listTools({ search: tool.name, limit: 1 });
+  for (const tool of dream.suggestedTools ?? []) {
+    const existing = await listTools({ search: tool.name, tag: null });
     if (existing.tools.length === 0) {
       await createTool({
         name: tool.name,
         description: tool.description,
         instructions: tool.instructions,
-        inputSchema: tool.inputSchema ?? {},
         tags: tool.tags ?? [],
       }).catch(() => undefined);
     }
   }
 
-  if (dream.userSignals?.length) {
-    const current = await getUserModel();
-    const content = await compressUserModel(current.content, dream.userSignals);
-    await setUserModel(content);
+  for (const signal of dream.userSignals ?? []) {
+    await createMemoryItem({
+      content: signal,
+      sourceType: "dream_inference",
+      status: "candidate",
+      confidence: 0.55,
+      metadata: {
+        inferredFrom: "dream_cycle",
+      },
+    }).catch(() => undefined);
   }
 
+  await refreshUserModelFromCuratedMemory();
   return dream;
 }

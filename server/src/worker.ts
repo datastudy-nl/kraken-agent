@@ -92,9 +92,9 @@ const userModelWorker = new Worker(
 const dreamWorker = new Worker(
   "memory-dream",
   async () => {
-    const result = await runDreamCycle(config.KRAKEN_DREAM_MESSAGE_LIMIT);
+    const result = await runDreamCycle();
     console.log(
-      `[dreaming] Processed ${result.processedMessages} messages, inferred ${result.affectedEntityIds.length} entities`,
+      `[dreaming] Inferred ${result.entities.length} entities and ${result.relationships.length} relationships`,
     );
     return result;
   },

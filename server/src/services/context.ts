@@ -126,6 +126,13 @@ function formatMemory(memory: Awaited<ReturnType<typeof queryMemory>>): string {
     }
   }
 
+  if (memory.inferredMemories && memory.inferredMemories.length > 0) {
+    lines.push("\n## Inferred / Lower-Confidence Memory");
+    for (const mem of memory.inferredMemories.slice(0, 5)) {
+      lines.push(`- ${mem.content} (${mem.kind}; ${mem.sourceType}; status: ${mem.status})`);
+    }
+  }
+
   if (memory.results.length > 0) {
     lines.push("\n## Retrieved Context");
     for (const result of memory.results.slice(0, 5)) {
