@@ -12,7 +12,7 @@ interface Community {
   name: string;
   level: number;
   summary: string;
-  entityNames: string[];
+  entity_ids: string[];
 }
 
 interface Skill {
@@ -66,11 +66,35 @@ export function useDeleteEntity() {
 }
 
 // Graph
-export function useGraph(entity: string, depth = 2) {
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: string;
+  properties: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  properties: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  depth: number;
+  center: string | null;
+}
+
+export function useGraph(center: string, depth = 2) {
   return useQuery({
-    queryKey: ["graph", entity, depth],
-    queryFn: () => api.get<{ nodes: unknown[]; edges: unknown[] }>(`/v1/memory/graph?entity=${encodeURIComponent(entity)}&depth=${depth}`),
-    enabled: !!entity,
+    queryKey: ["graph", center, depth],
+    queryFn: () => api.get<GraphData>(`/v1/memory/graph?center=${encodeURIComponent(center)}&depth=${depth}`),
+    enabled: !!center,
   });
 }
 
