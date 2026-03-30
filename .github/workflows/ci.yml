@@ -123,7 +123,7 @@ jobs:
           KRAKEN_API_KEY=test-api-key
           KRAKEN_SECRET_KEY=test-secret-key-1234567890
           POSTGRES_PASSWORD=kraken
-          NEO4J_PASSWORD=kraken
+          NEO4J_PASSWORD=krakenpass
           KRAKEN_DEFAULT_MODEL=kraken-omni-2.7n
           KRAKEN_EXTRACTION_MODEL=kraken-omni-2.7n
           ENVEOF

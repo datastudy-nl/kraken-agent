@@ -19,7 +19,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-kraken}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-krakenpass}
       - KRAKEN_BROWSER_CDP_URL=ws://chromium:3000
       - KRAKEN_SECRET_KEY=${KRAKEN_SECRET_KEY}
     env_file:
@@ -58,7 +58,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - NEO4J_URL=bolt://neo4j:7687
       - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-kraken}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-krakenpass}
       - KRAKEN_BROWSER_CDP_URL=ws://chromium:3000
       - KRAKEN_SECRET_KEY=${KRAKEN_SECRET_KEY}
     env_file:
@@ -103,7 +103,7 @@ services:
   neo4j:
     image: neo4j:5-community
     environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-kraken}
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-krakenpass}
       - NEO4J_server_bolt_enabled=true
       - NEO4J_server_http_enabled=true
       - NEO4J_server_https_enabled=false
