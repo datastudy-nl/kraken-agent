@@ -472,8 +472,8 @@ export function NetworkNavigator() {
               nodePointerAreaPaint={nodePointerArea}
               onNodeClick={handleNodeClick}
               onNodeRightClick={handleNodeDblClick}
-              onNodeHover={(node) => setHoveredId(node?.id ?? null)}
-              onNodeDragEnd={(node) => {
+              onNodeHover={(node: FGNode | null) => setHoveredId(node?.id ?? null)}
+              onNodeDragEnd={(node: FGNode) => {
                 (node as any).fx = (node as any).x;
                 (node as any).fy = (node as any).y;
               }}
