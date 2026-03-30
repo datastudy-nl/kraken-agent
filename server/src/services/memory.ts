@@ -35,6 +35,13 @@ export type MemoryItemKind =
 export type MemoryItemStatus = "active" | "candidate" | "superseded" | "stale" | "archived" | "contradicted";
 export type MemoryItemScope = "global" | "user" | "session" | "task";
 export type MemoryItemSource = "user_explicit" | "assistant_inferred" | "graph_extracted" | "compaction_summary" | "dream_inference";
+export type MemoryItemRelation = "prefers" | "avoids" | "has_name" | "works_on" | "has_goal" | "has_constraint" | "has_code" | "states";
+
+interface MemoryTriple {
+  subject: string;
+  predicate: MemoryItemRelation;
+  object: string;
+}
 
 interface MemoryItemRecord {
   id: string;
@@ -61,6 +68,51 @@ const DURABLE_USER_MODEL_KINDS: MemoryItemKind[] = ["identity", "preference", "g
 
 function normalizeMemoryText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function extractMemoryTriple(content: string, kind?: MemoryItemKind, tags?: string[]): MemoryTriple {
+  const normalized = content.trim().replace(/\s+/g, " ");
+  const preferenceLike = kind === "preference" || (tags ?? []).some((tag) => tag.toLowerCase() === "preference");
+  if (preferenceLike) {
+    const preferMatch = normalized.match(/^(?:user|i)\s+(?:prefers?|likes?)\s+(.+)$/i);
+    if (preferMatch) return { subject: "user", predicate: "prefers", object: normalizeMemoryText(preferMatch[1]) };
+    const avoidMatch = normalized.match(/^(?:user|i)\s+(?:avoids?|dislikes?)\s+(.+)$/i);
+    if (avoidMatch) return { subject: "user", predicate: "avoids", object: normalizeMemoryText(avoidMatch[1]) };
+  }
+  const nameMatch = normalized.match(/^(?:my name is|i am|i'm)\s+(.+)$/i);
+  if (nameMatch) return { subject: "user", predicate: "has_name", object: normalizeMemoryText(nameMatch[1]) };
+  const workMatch = normalized.match(/^(?:user|i)\s+(?:am working on|work on|working on)\s+(.+)$/i);
+  if (workMatch) return { subject: "user", predicate: "works_on", object: normalizeMemoryText(workMatch[1]) };
+  const goalMatch = normalized.match(/^(?:user|i)\s+(?:want|need|am trying)\s+(?:to\s+)?(.+)$/i);
+  if (goalMatch) return { subject: "user", predicate: "has_goal", object: normalizeMemoryText(goalMatch[1]) };
+  const constraintMatch = normalized.match(/^(?:user|i)\s+(?:cannot|can't|must not|should not)\s+(.+)$/i);
+  if (constraintMatch) return { subject: "user", predicate: "has_constraint", object: normalizeMemoryText(constraintMatch[1]) };
+  const codeMatch = normalized.match(/^(?:.*?code(?: is)?|door code(?: is)?)\s+(.+)$/i);
+  if (codeMatch) return { subject: "user", predicate: "has_code", object: normalizeMemoryText(codeMatch[1]) };
+  return { subject: kind === "project_state" ? "project" : "memory", predicate: "states", object: normalizeMemoryText(normalized) };
+}
+
+function arePredicatesContradictory(left: MemoryItemRelation, right: MemoryItemRelation): boolean {
+  return (left === "prefers" && right === "avoids") || (left === "avoids" && right === "prefers");
+}
+
+function parseEmbedding(value: unknown): number[] | null {
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "number")) return value as number[];
+  return null;
 }
 
 function classifyExplicitMemory(fact: string, tags?: string[]): {
@@ -216,29 +268,7 @@ async function searchMemoryItems(
   return scored;
 }
 
-function semanticSimilarity(a: string, b: string): number {
-  const left = new Set(normalizeMemoryText(a).split(" ").filter(Boolean));
-  const right = new Set(normalizeMemoryText(b).split(" ").filter(Boolean));
-  if (left.size === 0 || right.size === 0) return 0;
-  const overlap = [...left].filter((token) => right.has(token)).length;
-  return overlap / Math.max(left.size, right.size);
-}
-
-function detectContradiction(a: string, b: string): boolean {
-  const left = normalizeMemoryText(a);
-  const right = normalizeMemoryText(b);
-  if (left === right) return false;
-  const negationPairs = [
-    [" likes ", " dislikes "],
-    [" prefer ", " dislike "],
-    [" is ", " is not "],
-    [" uses ", " does not use "],
-  ] as const;
-  return negationPairs.some(([pos, neg]) => (left.includes(pos) && right.includes(neg)) || (left.includes(neg) && right.includes(pos)));
-}
-
-async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKind, scope: MemoryItemScope, replacementId: string) {
-  const normalized = normalizeMemoryText(content);
+async function findSimilarMemoryItems(content: string, embedding: number[] | null, kind: MemoryItemKind, scope: MemoryItemScope, excludeId: string, tripleSubject: string) {
   const rows = await db
     .select()
     .from(schema.memoryItems)
@@ -247,47 +277,58 @@ async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKin
         eq(schema.memoryItems.status, "active"),
         eq(schema.memoryItems.kind, kind),
         eq(schema.memoryItems.scope, scope),
-        sql`${schema.memoryItems.id} <> ${replacementId}`,
+        sql`${schema.memoryItems.id} <> ${excludeId}`,
       ),
     );
 
-  const rowList = Array.isArray(rows) ? rows : [];
-  const exactMatches = rowList.filter((row) => normalizeMemoryText(row.content) === normalized);
-  const contradictions = rowList.filter((row) => detectContradiction(row.content, content));
-  const semanticallySimilar = rowList.filter((row) => semanticSimilarity(row.content, content) >= 0.85);
+  return rows
+    .filter((row) => {
+      const rowEmbedding = parseEmbedding(row.embedding);
+      if (embedding && rowEmbedding) return cosineSimilarity(embedding, rowEmbedding) >= 0.985;
+      const rowTriple = ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+      return rowTriple.subject === tripleSubject || normalizeMemoryText(row.content) === normalizeMemoryText(content);
+    })
+    .map((row) => ({ id: row.id, content: row.content, metadata: (row.metadata as Record<string, unknown>) ?? {} }));
+}
+
+function triplesEqual(left: MemoryTriple, right: MemoryTriple): boolean {
+  return left.subject === right.subject && left.predicate === right.predicate && left.object === right.object;
+}
+
+function areTriplesContradictory(left: MemoryTriple, right: MemoryTriple): boolean {
+  if (left.subject !== right.subject) return false;
+  if (left.predicate === right.predicate && left.predicate !== "states") return left.object !== right.object;
+  if (arePredicatesContradictory(left.predicate, right.predicate)) return left.object === right.object;
+  if (left.predicate === "has_name" && right.predicate === "has_name") return left.object !== right.object;
+  if (left.predicate === "has_code" && right.predicate === "has_code") return left.object !== right.object;
+  return false;
+}
+
+async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKind, scope: MemoryItemScope, replacementId: string, embedding: number[] | null, triple: MemoryTriple) {
+  const similarRows = await findSimilarMemoryItems(content, embedding, kind, scope, replacementId, triple.subject);
+  const exactMatches = similarRows.filter((row) => {
+    const rowTriple = (row.metadata?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+    return triplesEqual(rowTriple, triple);
+  });
+  const contradictions = similarRows.filter((row) => {
+    const rowTriple = (row.metadata?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+    return areTriplesContradictory(rowTriple, triple);
+  });
+  const duplicateCandidates = similarRows.filter((row) => {
+    const rowTriple = (row.metadata?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+    return rowTriple.subject === triple.subject && rowTriple.predicate === triple.predicate && !triplesEqual(rowTriple, triple) && !areTriplesContradictory(rowTriple, triple);
+  });
 
   if (exactMatches.length > 0) {
-    await db
-      .update(schema.memoryItems)
-      .set({
-        status: "superseded",
-        supersededBy: replacementId,
-        updatedAt: new Date(),
-      })
-      .where(inArray(schema.memoryItems.id, exactMatches.map((row) => row.id)));
+    await db.update(schema.memoryItems).set({ status: "superseded", supersededBy: replacementId, updatedAt: new Date() }).where(inArray(schema.memoryItems.id, exactMatches.map((row) => row.id)));
   }
 
   if (contradictions.length > 0) {
-    await db
-      .update(schema.memoryItems)
-      .set({
-        status: "contradicted",
-        supersededBy: replacementId,
-        updatedAt: new Date(),
-      })
-      .where(inArray(schema.memoryItems.id, contradictions.map((row) => row.id)));
+    await db.update(schema.memoryItems).set({ status: "contradicted", supersededBy: replacementId, updatedAt: new Date() }).where(inArray(schema.memoryItems.id, contradictions.map((row) => row.id)));
   }
 
-  const duplicateCandidates = semanticallySimilar.filter((row) => !exactMatches.some((m) => m.id === row.id) && !contradictions.some((m) => m.id === row.id));
   if (duplicateCandidates.length > 0) {
-    await db
-      .update(schema.memoryItems)
-      .set({
-        status: "archived",
-        supersededBy: replacementId,
-        updatedAt: new Date(),
-      })
-      .where(inArray(schema.memoryItems.id, duplicateCandidates.map((row) => row.id)));
+    await db.update(schema.memoryItems).set({ status: "archived", supersededBy: replacementId, updatedAt: new Date() }).where(inArray(schema.memoryItems.id, duplicateCandidates.map((row) => row.id)));
   }
 }
 
@@ -310,6 +351,9 @@ async function createMemoryItem(input: {
   const importance = input.importance ?? classification.importance;
   const expiresAt = input.expiresAt ?? classification.expiresAt;
 
+  const embedding = input.content.length > 20 ? await createEmbedding(input.content).catch(() => null) : null;
+  const triple = extractMemoryTriple(input.content, kind, input.tags);
+
   const [row] = await db
     .insert(schema.memoryItems)
     .values({
@@ -324,21 +368,13 @@ async function createMemoryItem(input: {
       importance: Math.round(importance * 100),
       expiresAt,
       lastConfirmedAt: new Date(),
-      metadata: input.metadata ?? {},
+      embedding: embedding ?? undefined,
+      metadata: { ...(input.metadata ?? {}), triple },
     })
     .returning();
 
   if ((input.status ?? "active") === "active") {
-    await supersedeMatchingMemoryItems(input.content, kind, scope, row.id);
-  }
-
-  if (input.content.length > 20) {
-    try {
-      const embedding = await createEmbedding(input.content);
-      await db.update(schema.memoryItems).set({ embedding }).where(eq(schema.memoryItems.id, row.id));
-    } catch {
-      // Non-fatal
-    }
+    await supersedeMatchingMemoryItems(input.content, kind, scope, row.id, embedding, triple);
   }
 
   return row;

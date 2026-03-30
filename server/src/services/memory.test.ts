@@ -389,6 +389,60 @@ describe("curated memory items", () => {
 
 
 describe("memory item consolidation", () => {
+
+  it("stores structured triples and uses embedding-backed duplicate archival", async () => {
+    state.memoryRows = [{
+      id: "mem-old",
+      sessionId: "session-1",
+      content: "User prefers short practical answers",
+      kind: "preference",
+      scope: "user",
+      sourceType: "user_explicit",
+      status: "active",
+      tags: ["preference"],
+      metadata: { triple: { subject: "user", predicate: "prefers", object: "short practical answers" } },
+      embedding: new Array(1536).fill(0.1),
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+      confidence: 100,
+      importance: 95,
+      reuseCount: 0,
+      lastRetrievedAt: null,
+      lastConfirmedAt: null,
+      expiresAt: null,
+      supersededBy: null,
+    }];
+
+    await storeExplicitMemory("session-1", "User prefers short practical replies", ["preference"]);
+    expect(state.memoryRows[1].metadata.triple).toEqual({ subject: "user", predicate: "prefers", object: "short practical replies" });
+    expect(state.updatedMemoryItems.some((item) => item.status === "superseded")).toBe(true);
+  });
+
+  it("marks structured same-predicate conflicts as contradicted", async () => {
+    state.memoryRows = [{
+      id: "mem-old-name",
+      sessionId: "session-1",
+      content: "My name is Lars",
+      kind: "identity",
+      scope: "user",
+      sourceType: "user_explicit",
+      status: "active",
+      tags: ["identity"],
+      metadata: { triple: { subject: "user", predicate: "has_name", object: "lars" } },
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+      confidence: 100,
+      importance: 100,
+      reuseCount: 0,
+      lastRetrievedAt: null,
+      lastConfirmedAt: null,
+      expiresAt: null,
+      supersededBy: null,
+    }];
+
+    await storeExplicitMemory("session-1", "My name is Rowan", ["identity"]);
+    expect(state.updatedMemoryItems.some((item) => item.status === "contradicted")).toBe(true);
+  });
   it("marks contradictory memories when a new explicit fact conflicts", async () => {
     state.memoryRows = [{
       id: "mem-old",
