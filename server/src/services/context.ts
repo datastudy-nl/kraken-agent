@@ -105,9 +105,10 @@ function formatMemory(memory: Awaited<ReturnType<typeof queryMemory>>): string {
 
   // Explicit memories get top billing — these are facts the user explicitly asked to remember
   if (memory.explicitMemories && memory.explicitMemories.length > 0) {
-    lines.push("## Stored Memories (explicitly remembered facts)");
+    lines.push("## Stored Memories (curated durable memory items)");
     for (const mem of memory.explicitMemories) {
-      lines.push(`- ${mem.content} (stored: ${mem.timestamp})`);
+      const labels = [mem.kind, ...(mem.tags ?? [])].filter(Boolean).join(", ");
+      lines.push(`- ${mem.content} (${labels}; stored: ${mem.timestamp})`);
     }
   }
 

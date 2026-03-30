@@ -58,6 +58,41 @@ export const messages = pgTable(
   ],
 );
 
+
+
+// --- Curated memory items ---
+export const memoryItems = pgTable(
+  "memory_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    status: text("status").notNull().default("active"),
+    scope: text("scope").notNull().default("user"),
+    sourceType: text("source_type").notNull(),
+    content: text("content").notNull(),
+    tags: jsonb("tags").notNull().default([]),
+    confidence: integer("confidence").notNull().default(100),
+    importance: integer("importance").notNull().default(80),
+    reuseCount: integer("reuse_count").notNull().default(0),
+    lastRetrievedAt: timestamp("last_retrieved_at", { withTimezone: true }),
+    lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    supersededBy: uuid("superseded_by"),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    searchVector: tsvector("search_vector"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("memory_items_status_idx").on(t.status),
+    index("memory_items_scope_idx").on(t.scope),
+    index("memory_items_created_idx").on(t.createdAt),
+    index("memory_items_search_idx").using("gin", t.searchVector),
+  ],
+);
+
 // --- Skills (procedural memory) ---
 export const skills = pgTable(
   "skills",

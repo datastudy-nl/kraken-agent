@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import {
   createEntity,
@@ -22,10 +22,200 @@ import { getUserModel, setUserModel } from "./identity.js";
 import { createTool, listTools } from "./tools.js";
 import { createSkill, listSkills } from "./skills.js";
 import { hybridSearch } from "./vector.js";
-import { config } from "../config.js";
 import { destroySandbox } from "./sandbox.js";
 
 export type MemoryMode = "auto" | "local" | "global" | "drift" | "basic";
+export type MemoryItemKind =
+  | "fact"
+  | "preference"
+  | "goal"
+  | "project_state"
+  | "identity"
+  | "constraint"
+  | "temporary";
+export type MemoryItemStatus = "active" | "superseded" | "stale" | "archived";
+export type MemoryItemScope = "global" | "user" | "session" | "task";
+export type MemoryItemSource = "user_explicit" | "assistant_inferred" | "compaction_summary";
+
+interface MemoryItemRecord {
+  id: string;
+  sessionId: string | null;
+  kind: MemoryItemKind;
+  status: MemoryItemStatus;
+  scope: MemoryItemScope;
+  sourceType: MemoryItemSource;
+  content: string;
+  tags: string[];
+  confidence: number;
+  importance: number;
+  reuseCount: number;
+  lastRetrievedAt: Date | null;
+  lastConfirmedAt: Date | null;
+  expiresAt: Date | null;
+  supersededBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  metadata: Record<string, unknown>;
+}
+
+function classifyExplicitMemory(fact: string, tags?: string[]): {
+  kind: MemoryItemKind;
+  scope: MemoryItemScope;
+  importance: number;
+  expiresAt: Date | null;
+} {
+  const lowerFact = fact.toLowerCase();
+  const lowerTags = new Set((tags ?? []).map((tag) => tag.toLowerCase()));
+
+  if (lowerTags.has("preference") || /\bprefer|like|dislike|favorite\b/.test(lowerFact)) {
+    return { kind: "preference", scope: "user", importance: 0.95, expiresAt: null };
+  }
+  if (lowerTags.has("goal") || /\bgoal|want|need to|trying to\b/.test(lowerFact)) {
+    return { kind: "goal", scope: "user", importance: 0.9, expiresAt: null };
+  }
+  if (lowerTags.has("identity") || /\bmy name is|i am|i'm\b/.test(lowerFact)) {
+    return { kind: "identity", scope: "user", importance: 1, expiresAt: null };
+  }
+  if (lowerTags.has("temporary") || lowerTags.has("code") || /\btemporary|until|tomorrow|today|this week|code\b/.test(lowerFact)) {
+    return {
+      kind: "temporary",
+      scope: "session",
+      importance: 0.65,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    };
+  }
+  if (lowerTags.has("project") || /\brepo|branch|project|working on\b/.test(lowerFact)) {
+    return { kind: "project_state", scope: "session", importance: 0.8, expiresAt: null };
+  }
+  return { kind: "fact", scope: "user", importance: 0.8, expiresAt: null };
+}
+
+function scoreMemoryItem(item: MemoryItemRecord): number {
+  const now = Date.now();
+  const createdAgeDays = Math.max(0, (now - item.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+  const freshnessPenalty = Math.min(createdAgeDays / 365, 0.35);
+  const reuseBonus = Math.min(item.reuseCount * 0.05, 0.25);
+  const retrievalBonus = item.lastRetrievedAt ? 0.05 : 0;
+  const expiryPenalty = item.expiresAt && item.expiresAt.getTime() < now ? 0.5 : 0;
+  return item.importance / 100 + item.confidence / 100 + reuseBonus + retrievalBonus - freshnessPenalty - expiryPenalty;
+}
+
+async function touchMemoryItems(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(schema.memoryItems)
+    .set({
+      reuseCount: sql`${schema.memoryItems.reuseCount} + 1`,
+      lastRetrievedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(sql`${schema.memoryItems.id} = ANY(${ids})`);
+}
+
+async function searchMemoryItems(
+  query: string,
+  limit: number,
+): Promise<Array<{ id: string; content: string; timestamp: string; kind: MemoryItemKind; score: number; tags: string[] }>> {
+  const rows = await db
+    .select()
+    .from(schema.memoryItems)
+    .where(
+      and(
+        eq(schema.memoryItems.status, "active"),
+        or(isNull(schema.memoryItems.expiresAt), sql`${schema.memoryItems.expiresAt} > now()`),
+        or(
+          ilike(schema.memoryItems.content, `%${query}%`),
+          sql`${schema.memoryItems.searchVector} @@ plainto_tsquery('english', ${query})`,
+        ),
+      ),
+    )
+    .orderBy(desc(schema.memoryItems.importance), desc(schema.memoryItems.updatedAt))
+    .limit(limit * 3);
+
+  const scored = rows
+    .map((row) => ({
+      id: row.id,
+      content: row.content,
+      timestamp: row.createdAt.toISOString(),
+      kind: row.kind,
+      score: scoreMemoryItem(row as MemoryItemRecord),
+      tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  await touchMemoryItems(scored.map((row) => row.id));
+  return scored;
+}
+
+async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKind, scope: MemoryItemScope, replacementId: string) {
+  await db
+    .update(schema.memoryItems)
+    .set({
+      status: "superseded",
+      supersededBy: replacementId,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.memoryItems.status, "active"),
+        eq(schema.memoryItems.kind, kind),
+        eq(schema.memoryItems.scope, scope),
+        ilike(schema.memoryItems.content, `%${content}%`),
+        sql`${schema.memoryItems.id} <> ${replacementId}`,
+      ),
+    );
+}
+
+async function createMemoryItem(input: {
+  sessionId?: string;
+  content: string;
+  tags?: string[];
+  sourceType: MemoryItemSource;
+  confidence?: number;
+  kind?: MemoryItemKind;
+  scope?: MemoryItemScope;
+  importance?: number;
+  expiresAt?: Date | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const classification = classifyExplicitMemory(input.content, input.tags);
+  const kind = input.kind ?? classification.kind;
+  const scope = input.scope ?? classification.scope;
+  const importance = input.importance ?? classification.importance;
+  const expiresAt = input.expiresAt ?? classification.expiresAt;
+
+  const [row] = await db
+    .insert(schema.memoryItems)
+    .values({
+      sessionId: input.sessionId ?? null,
+      kind,
+      status: "active",
+      scope,
+      sourceType: input.sourceType,
+      content: input.content,
+      tags: input.tags ?? [],
+      confidence: Math.round((input.confidence ?? 1) * 100),
+      importance: Math.round(importance * 100),
+      expiresAt,
+      lastConfirmedAt: new Date(),
+      metadata: input.metadata ?? {},
+    })
+    .returning();
+
+  await supersedeMatchingMemoryItems(input.content, kind, scope, row.id);
+
+  if (input.content.length > 20) {
+    try {
+      const embedding = await createEmbedding(input.content);
+      await db.update(schema.memoryItems).set({ embedding }).where(eq(schema.memoryItems.id, row.id));
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  return row;
+}
 
 export async function createSession(input?: {
   metadata?: Record<string, unknown>;
@@ -140,7 +330,6 @@ export async function getSession(id: string) {
 }
 
 export async function deleteSession(id: string): Promise<boolean> {
-  // Destroy sandbox container and workspace files
   await destroySandbox(id).catch(() => {});
   const rows = await db.delete(schema.sessions).where(eq(schema.sessions.id, id)).returning();
   return rows.length > 0;
@@ -155,10 +344,7 @@ export async function updateSessionPersonality(id: string, personality: string) 
   return rows[0] ?? null;
 }
 
-export async function archiveExpiredSessions(
-  maxAgeHours: number,
-  idleMinutes: number,
-): Promise<number> {
+export async function archiveExpiredSessions(maxAgeHours: number, idleMinutes: number): Promise<number> {
   const maxAgeThreshold = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
   const idleThreshold = new Date(Date.now() - idleMinutes * 60 * 1000);
 
@@ -176,9 +362,7 @@ export async function archiveExpiredSessions(
     )
     .returning();
 
-  // Destroy sandbox containers for archived sessions
   await Promise.allSettled(rows.map((r) => destroySandbox(r.id)));
-
   return rows.length;
 }
 
@@ -258,10 +442,6 @@ export async function storeMessage(input: {
     .set({ updatedAt: new Date(), lastActiveAt: new Date() })
     .where(eq(schema.sessions.id, input.sessionId));
 
-  // Embed user/assistant messages for hybrid search (>20 chars to skip trivial).
-  // User messages are awaited so cross-session recall works immediately
-  // (e.g. "remember X" in Discord is findable from /chat/completions right away).
-  // Assistant messages are fire-and-forget to avoid blocking responses.
   if (input.content.length > 20) {
     if (input.role === "user") {
       await embedMessageSync(row.id, input.content);
@@ -273,32 +453,26 @@ export async function storeMessage(input: {
   return row;
 }
 
-/** Await embedding so the message is immediately searchable via vector similarity. */
 async function embedMessageSync(messageId: string, content: string): Promise<void> {
   try {
     const embedding = await createEmbedding(content);
     await db.update(schema.messages).set({ embedding }).where(eq(schema.messages.id, messageId));
   } catch {
-    /* non-fatal — hybrid search falls back to FTS-only */
+    // Non-fatal
   }
 }
 
-/** Fire-and-forget embedding for hybrid search. Failures are non-fatal. */
 function embedMessageBackground(messageId: string, content: string): void {
   createEmbedding(content)
     .then(async (embedding) => {
-      await db
-        .update(schema.messages)
-        .set({ embedding })
-        .where(eq(schema.messages.id, messageId));
+      await db.update(schema.messages).set({ embedding }).where(eq(schema.messages.id, messageId));
     })
     .catch(() => {
-      /* non-fatal — hybrid search falls back to FTS-only */
+      // Non-fatal
     });
 }
 
 export async function searchEpisodes(query: string, limit: number) {
-  // Try hybrid search (FTS + vector) first, fall back to FTS-only
   const hybridResults = await hybridSearch(query, limit);
   if (hybridResults.length > 0) {
     return hybridResults.map((row) => ({
@@ -311,7 +485,6 @@ export async function searchEpisodes(query: string, limit: number) {
     }));
   }
 
-  // FTS fallback (no embeddings available yet)
   const ftsRows = await db.execute(sql`
     SELECT id, session_id, role, content, created_at, metadata,
            ts_rank(search_vector, plainto_tsquery('english', ${query})) AS rank
@@ -332,7 +505,6 @@ export async function searchEpisodes(query: string, limit: number) {
     }));
   }
 
-  // Final fallback: ILIKE substring match
   const rows = await db
     .select()
     .from(schema.messages)
@@ -350,44 +522,8 @@ export async function searchEpisodes(query: string, limit: number) {
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Explicit memory — user-requested "remember this" facts
-// ---------------------------------------------------------------------------
-
-/** Search for explicitly stored memories matching a query. */
-async function searchExplicitMemories(
-  query: string,
-  limit: number,
-): Promise<Array<{ content: string; timestamp: string }>> {
-  const rows = await db.execute(sql`
-    SELECT content, created_at
-    FROM messages
-    WHERE metadata->>'type' = 'explicit_memory'
-      AND (
-        content ILIKE ${"%" + query + "%"}
-        OR search_vector @@ plainto_tsquery('english', ${query})
-      )
-    ORDER BY created_at DESC
-    LIMIT ${limit}
-  `);
-  return rows.rows.map((row: any) => ({
-    content: row.content,
-    timestamp: new Date(row.created_at).toISOString(),
-  }));
-}
-
-/**
- * Store an explicit memory fact that the user asked the agent to remember.
- * Written as a system message with metadata.type = "explicit_memory" so it
- * can be prioritized during retrieval. The embedding is created synchronously
- * so the fact is immediately searchable from any session.
- */
-export async function storeExplicitMemory(
-  sessionId: string,
-  fact: string,
-  tags?: string[],
-): Promise<{ id: string; fact: string }> {
-  const [row] = await db
+export async function storeExplicitMemory(sessionId: string, fact: string, tags?: string[]): Promise<{ id: string; fact: string }> {
+  const [messageRow] = await db
     .insert(schema.messages)
     .values({
       sessionId,
@@ -401,10 +537,18 @@ export async function storeExplicitMemory(
     })
     .returning();
 
-  // Synchronously embed so the fact is immediately searchable cross-session
-  await embedMessageSync(row.id, fact);
+  await embedMessageSync(messageRow.id, fact);
+  const memoryItem = await createMemoryItem({
+    sessionId,
+    content: fact,
+    tags,
+    sourceType: "user_explicit",
+    metadata: {
+      messageId: messageRow.id,
+      migratedFrom: "messages",
+    },
+  });
 
-  // Also create a Neo4j entity for graph recall
   try {
     const existing = await findEntityByName(fact.slice(0, 100));
     if (!existing) {
@@ -417,44 +561,25 @@ export async function storeExplicitMemory(
           sessionId,
           storedAt: new Date().toISOString(),
           tags: tags ?? [],
+          memoryItemId: memoryItem.id,
         },
       });
     }
   } catch {
-    // Non-fatal — PostgreSQL storage is the primary store
+    // Non-fatal
   }
 
-  return { id: row.id, fact };
+  return { id: memoryItem.id, fact };
 }
 
-/**
- * Search for explicitly stored memories plus relevant episodic context.
- * Explicit memories (metadata.type = "explicit_memory") are returned first.
- */
-export async function recallMemories(
-  query: string,
-  limit: number = 10,
-): Promise<Array<{ content: string; type: "explicit" | "episode"; timestamp: string }>> {
-  // Search explicit memories first (highest priority)
-  const explicitRows = await db.execute(sql`
-    SELECT id, content, created_at, metadata
-    FROM messages
-    WHERE metadata->>'type' = 'explicit_memory'
-      AND (
-        content ILIKE ${"%" + query + "%"}
-        OR search_vector @@ plainto_tsquery('english', ${query})
-      )
-    ORDER BY created_at DESC
-    LIMIT ${Math.ceil(limit / 2)}
-  `);
-
-  const explicitResults = explicitRows.rows.map((row: any) => ({
+export async function recallMemories(query: string, limit: number = 10): Promise<Array<{ content: string; type: "explicit" | "episode"; timestamp: string }>> {
+  const explicitItems = await searchMemoryItems(query, Math.ceil(limit / 2));
+  const explicitResults = explicitItems.map((row) => ({
     content: row.content,
     type: "explicit" as const,
-    timestamp: new Date(row.created_at).toISOString(),
+    timestamp: row.timestamp,
   }));
 
-  // Then search episodic memory for broader context
   const episodeLimit = limit - explicitResults.length;
   const episodes = episodeLimit > 0 ? await searchEpisodes(query, episodeLimit) : [];
   const episodeResults = episodes
@@ -468,6 +593,30 @@ export async function recallMemories(
   return [...explicitResults, ...episodeResults].slice(0, limit);
 }
 
+export async function runMemoryMaintenance(now: Date = new Date()) {
+  const staleCutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const result = await db
+    .update(schema.memoryItems)
+    .set({ status: "stale", updatedAt: now })
+    .where(
+      and(
+        eq(schema.memoryItems.status, "active"),
+        or(
+          sql`${schema.memoryItems.expiresAt} < ${now.toISOString()}`,
+          and(
+            sql`${schema.memoryItems.importance} < 0.75`,
+            sql`${schema.memoryItems.reuseCount} = 0`,
+            sql`${schema.memoryItems.createdAt} < ${staleCutoff.toISOString()}`,
+          ),
+        ),
+      ),
+    )
+    .returning(),
+  ;
+
+  return { updated: result.length };
+}
+
 export async function queryMemory(input: {
   query: string;
   mode: MemoryMode;
@@ -476,45 +625,22 @@ export async function queryMemory(input: {
   userModel?: string;
 }) {
   const mode = input.mode === "auto" ? chooseMode(input.query) : input.mode;
+  const modelEntityNames = input.userModel ? extractEntityNamesFromModel(input.userModel) : [];
 
-  // Extract entity names mentioned in the user model for expanded search
-  const modelEntityNames = input.userModel
-    ? extractEntityNamesFromModel(input.userModel)
-    : [];
-
-  // Always search both episodes and graph — modes influence emphasis, not exclusion
-  // Also fetch community summaries in drift mode (default) for broader recall
-  // Also search explicit memories that the user asked the agent to store
   const [episodes, candidateEntities, globalSummaries, explicitMemories] = await Promise.all([
     searchEpisodes(input.query, input.limit),
     listEntities({ type: undefined, search: input.query, limit: input.limit }),
-    mode === "global" || mode === "drift"
-      ? getAllCommunitySummaries()
-      : Promise.resolve([]),
-    searchExplicitMemories(input.query, 5),
+    mode === "global" || mode === "drift" ? getAllCommunitySummaries() : Promise.resolve([]),
+    searchMemoryItems(input.query, 5),
   ]);
 
-  // If the direct query didn't find entities, try searching for entities
-  // mentioned in the user model (e.g. "what do I like?" won't match
-  // "TypeScript" directly, but the user model contains that fact)
   let modelEntities: Array<{ id: string; name: string; type: string; properties: Record<string, unknown>; createdAt: string }> = [];
   if (candidateEntities.entities.length === 0 && modelEntityNames.length > 0) {
-    const modelSearches = await Promise.all(
-      modelEntityNames.slice(0, 5).map((name) =>
-        findEntityByName(name).catch(() => null),
-      ),
-    );
-    modelEntities = modelSearches.filter(
-      (e): e is NonNullable<typeof e> => e !== null,
-    );
+    const modelSearches = await Promise.all(modelEntityNames.slice(0, 5).map((name) => findEntityByName(name).catch(() => null)));
+    modelEntities = modelSearches.filter((e): e is NonNullable<typeof e> => e !== null);
   }
 
-  const allCandidates = [
-    ...candidateEntities.entities,
-    ...modelEntities,
-  ];
-
-  // Deduplicate by id
+  const allCandidates = [...candidateEntities.entities, ...modelEntities];
   const seenIds = new Set<string>();
   const uniqueCandidates = allCandidates.filter((e) => {
     if (seenIds.has(e.id)) return false;
@@ -522,158 +648,84 @@ export async function queryMemory(input: {
     return true;
   });
 
-  // Collect graph context from all matched entities (not just the first one)
-  const graphNodes: Array<{ id: string; name: string; type: string; properties: Record<string, unknown>; createdAt: string }> = [];
-  let communitySummaries: string[] = [];
+  const graphNodes: Array<{ id: string; name: string; type: string; properties: Record<string, unknown> }> = [];
+  const graphEdges: Array<{ source: string; target: string; type: string }> = [];
+  const communities: Array<{ id: string; name: string; summary: string; level: number }> = [];
+  const seenNodeIds = new Set<string>();
+  const seenEdgeIds = new Set<string>();
+  const seenCommunityIds = new Set<string>();
 
-  if (uniqueCandidates.length > 0) {
-    // Expand neighborhoods for up to 3 top entities to get richer context
-    const expansions = await Promise.all(
-      uniqueCandidates.slice(0, 3).map(async (entity) => {
-        const [neighborhood, communities] = await Promise.all([
-          getEntityNeighborhood(entity.id, 2),
-          getEntityCommunitySummaries(entity.id),
-        ]);
-        return { nodes: neighborhood.nodes, communities };
-      }),
-    );
-
-    const nodeIds = new Set<string>();
-    for (const expansion of expansions) {
-      for (const node of expansion.nodes) {
-        if (!nodeIds.has(node.id)) {
-          nodeIds.add(node.id);
-          graphNodes.push(node);
-        }
+  for (const entity of uniqueCandidates.slice(0, Math.max(1, Math.ceil(input.limit / 2)))) {
+    const neighborhood = await getEntityNeighborhood(entity.id, mode === "basic" ? 1 : 2);
+    for (const node of neighborhood.nodes) {
+      if (!seenNodeIds.has(node.id)) {
+        seenNodeIds.add(node.id);
+        graphNodes.push({ id: node.id, name: node.name, type: node.type, properties: node.properties });
       }
-      communitySummaries.push(...expansion.communities);
+    }
+    for (const edge of neighborhood.edges) {
+      const edgeKey = `${edge.source}:${edge.type}:${edge.target}`;
+      if (!seenEdgeIds.has(edgeKey)) {
+        seenEdgeIds.add(edgeKey);
+        graphEdges.push({ source: edge.source, target: edge.target, type: edge.type });
+      }
+    }
+    const entitySummaries = await getEntityCommunitySummaries(entity.id);
+    for (const summary of entitySummaries) {
+      const key = `${entity.id}:${summary}`;
+      if (!seenCommunityIds.has(key)) {
+        seenCommunityIds.add(key);
+        communities.push({ id: key, name: entity.name, summary, level: 0 });
+      }
     }
   }
 
-  // Merge global/drift summaries
-  if (globalSummaries.length > 0) {
-    communitySummaries = [...communitySummaries, ...globalSummaries];
+  if (mode === "global" || mode === "drift") {
+    for (const summary of globalSummaries) {
+      const key = `global:${summary}`;
+      if (!seenCommunityIds.has(key)) {
+        seenCommunityIds.add(key);
+        communities.push({ id: key, name: "global", summary, level: 1 });
+      }
+    }
   }
 
-  // Deduplicate community summaries
-  communitySummaries = [...new Set(communitySummaries)];
-
-  const primaryEntity = uniqueCandidates[0] ?? null;
-
-  console.log(
-    `[queryMemory] mode=${mode} query="${input.query.slice(0, 60)}" ` +
-    `entities=${graphNodes.length} communities=${communitySummaries.length} ` +
-    `episodes=${episodes.length} explicit=${explicitMemories.length} modelSeeds=${modelEntityNames.length}`,
-  );
+  const results = [
+    ...explicitMemories.map((mem) => ({ type: "memory_item", content: mem.content, kind: mem.kind, score: mem.score, tags: mem.tags })),
+    ...episodes.map((episode) => ({ type: "episode", ...episode })),
+    ...graphNodes.slice(0, input.limit).map((node) => ({ type: "entity", ...node })),
+  ].slice(0, input.limit);
 
   return {
-    query: input.query,
     mode,
-    explicitMemories,
-    results: [
-      ...graphNodes.map((node) => ({ item_type: "entity", ...node })),
-      ...communitySummaries.map((summary) => ({ type: "community_summary", summary })),
-      ...episodes.map((ep) => ({ item_type: "episode", ...ep })),
-    ].slice(0, input.limit),
-    entities: graphNodes.map((node) => ({
-      id: node.id,
-      name: node.name,
-      type: node.type,
-      properties: node.properties,
-      created_at: node.createdAt,
-    })),
-    communities: communitySummaries.map((summary, index) => ({
-      id: `community-${index}`,
-      name: primaryEntity ? `Context ${index + 1}` : `Community ${index + 1}`,
-      summary,
-      level: 0,
-      entity_ids: primaryEntity ? [primaryEntity.id] : [],
-    })),
+    results,
+    explicitMemories: explicitMemories.map((mem) => ({ content: mem.content, timestamp: mem.timestamp, kind: mem.kind, score: mem.score, tags: mem.tags })),
+    entities: uniqueCandidates.map((entity) => ({ id: entity.id, name: entity.name, type: entity.type })),
+    graph: { nodes: graphNodes, edges: graphEdges },
+    communities,
   };
 }
 
-/**
- * Extract plausible entity names from the user model text.
- * Looks for capitalized multi-word phrases, known tech terms, and
- * noun-like tokens that are likely entity names in the knowledge graph.
- */
-function extractEntityNamesFromModel(model: string): string[] {
-  const names = new Set<string>();
-
-  // Match capitalized words/phrases (likely proper nouns / project names / tools)
-  // e.g. "TypeScript", "Project Atlas", "PostgreSQL", "VS Code"
-  const capitalizedPattern = /\b([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*)\b/g;
-  let match;
-  while ((match = capitalizedPattern.exec(model)) !== null) {
-    const candidate = match[1].trim();
-    // Skip very short or very common words
-    if (candidate.length >= 3 && !COMMON_WORDS.has(candidate.toLowerCase())) {
-      names.add(candidate);
-    }
-  }
-
-  return [...names].slice(0, 10);
-}
-
-const COMMON_WORDS = new Set([
-  "the", "and", "for", "are", "but", "not", "you", "all", "can", "has",
-  "her", "was", "one", "our", "out", "his", "its", "they", "been", "have",
-  "this", "that", "with", "from", "will", "also", "user", "uses", "knows",
-  "prefers", "works", "model", "expert", "experienced", "strong", "style",
-]);
-
 function chooseMode(query: string): MemoryMode {
-  const lowered = query.toLowerCase();
-  if (lowered.includes("pattern") || lowered.includes("overall") || lowered.includes("across")) {
-    return "global";
-  }
-  // Default to drift (local + community enrichment) for broader recall
-  return "drift";
+  const q = query.toLowerCase();
+  if (/\bwho am i|what do you know about me|what was my|remember\b/.test(q)) return "drift";
+  if (/\bproject|repo|codebase|implementation|feature\b/.test(q)) return "local";
+  if (/\btheme|pattern|across conversations|overall\b/.test(q)) return "global";
+  return "basic";
 }
 
-export async function addEntity(input: {
-  name: string;
-  type: string;
-  properties?: Record<string, unknown>;
-}) {
-  const entity = await createEntity({
+function extractEntityNamesFromModel(userModel: string): string[] {
+  const matches = userModel.match(/\*\*(.*?)\*\*/g) ?? [];
+  return matches.map((match) => match.replace(/\*\*/g, "")).filter(Boolean);
+}
+
+export async function addEntity(input: { name: string; type: string; properties?: Record<string, unknown> }) {
+  return createEntity({
     id: crypto.randomUUID(),
     name: input.name,
     type: input.type,
     properties: input.properties ?? {},
   });
-
-  return {
-    id: entity.id,
-    name: entity.name,
-    type: entity.type,
-    properties: entity.properties,
-    created_at: entity.createdAt,
-  };
-}
-
-export async function addRelationship(input: {
-  source: string;
-  target: string;
-  type: string;
-  properties?: Record<string, unknown>;
-}) {
-  const rel = await createRelationship({
-    id: crypto.randomUUID(),
-    source: input.source,
-    target: input.target,
-    type: input.type,
-    properties: input.properties ?? {},
-  });
-
-  return {
-    id: rel.id,
-    source: rel.source,
-    target: rel.target,
-    type: rel.type,
-    properties: rel.properties,
-    created_at: rel.createdAt,
-  };
 }
 
 export async function removeEntity(id: string) {
@@ -681,198 +733,122 @@ export async function removeEntity(id: string) {
   return { deleted: true, id };
 }
 
-export async function getGraph(center?: string, depth: number = 2) {
-  if (!center) {
-    return { nodes: [], edges: [], depth, center: null };
-  }
-
-  const graph = await getEntityNeighborhood(center, depth);
-  return {
-    nodes: graph.nodes.map((n) => ({
-      id: n.id,
-      name: n.name,
-      type: n.type,
-      properties: n.properties,
-      created_at: n.createdAt,
-    })),
-    edges: graph.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: e.type,
-      properties: e.properties,
-      created_at: e.createdAt,
-    })),
-    depth,
-    center,
-  };
+export async function addRelationship(input: { source: string; target: string; type: string; properties?: Record<string, unknown> }) {
+  return createRelationship({
+    id: crypto.randomUUID(),
+    source: input.source,
+    target: input.target,
+    type: input.type,
+    properties: input.properties ?? {},
+  });
 }
 
-export async function getCommunities(level: number) {
-  const communities = await listCommunities(level);
-  return {
-    communities: communities.map((c) => ({
-      id: c.id,
-      name: c.name,
-      summary: c.summary,
-      level: c.level,
-      entity_ids: c.entityIds,
-    })),
-    level,
-  };
+export async function getCommunities(level?: number) {
+  return listCommunities(level);
+}
+
+export async function getGraph(center?: string, depth: number = 2) {
+  if (center) {
+    return getEntityNeighborhood(center, depth);
+  }
+  const entities = await listEntities({ limit: 100, search: undefined, type: undefined });
+  return { nodes: entities.entities, edges: [] };
 }
 
 export async function ingestConversationToGraph(input: {
   sessionId: string;
   messages: Array<{ role: string; content: string }>;
-}): Promise<{ affectedEntityIds: string[]; userSignals: string[] }> {
-  const conversation = input.messages
-    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-    .join("\n\n");
+}) {
+  const extraction = await extractMemoryFromConversation(input.messages);
+  const createdEntities: Array<{ id: string; name: string; type: string }> = [];
 
-  const extracted = await extractMemoryFromConversation(conversation);
-  const nameToId = new Map<string, string>();
-  const affectedEntityIds: string[] = [];
-
-  for (const entity of extracted.entities ?? []) {
-    let existing = await findEntityByName(entity.name);
-    if (!existing) {
-      existing = await createEntity({
-        id: crypto.randomUUID(),
-        name: entity.name,
-        type: entity.type,
-        properties: entity.properties ?? {},
-      });
+  for (const entity of extraction.entities ?? []) {
+    const existing = await findEntityByName(entity.name);
+    if (existing) {
+      createdEntities.push({ id: existing.id, name: existing.name, type: existing.type });
+      continue;
     }
-    nameToId.set(entity.name, existing.id);
-    affectedEntityIds.push(existing.id);
+    const created = await createEntity({
+      id: crypto.randomUUID(),
+      name: entity.name,
+      type: entity.type,
+      properties: entity.properties ?? {},
+    });
+    createdEntities.push({ id: created.id, name: created.name, type: created.type });
   }
 
-  for (const relationship of extracted.relationships ?? []) {
-    const sourceId = nameToId.get(relationship.source);
-    const targetId = nameToId.get(relationship.target);
-    if (!sourceId || !targetId) continue;
+  for (const rel of extraction.relationships ?? []) {
+    const source = createdEntities.find((entity) => entity.name === rel.source);
+    const target = createdEntities.find((entity) => entity.name === rel.target);
+    if (source && target) {
+      await createRelationship({
+        id: crypto.randomUUID(),
+        source: source.id,
+        target: target.id,
+        type: rel.type,
+        properties: rel.properties ?? {},
+      });
+    }
+  }
 
-    await createRelationship({
+  if (extraction.communitySummary && createdEntities.length > 0) {
+    await upsertCommunity({
       id: crypto.randomUUID(),
-      source: sourceId,
-      target: targetId,
-      type: relationship.type,
-      properties: relationship.properties ?? { sessionId: input.sessionId },
+      name: extraction.communityName ?? "Conversation Cluster",
+      summary: extraction.communitySummary,
+      level: 1,
+      entityIds: createdEntities.map((entity) => entity.id),
     });
   }
 
+  if (extraction.userSignals?.length) {
+    const current = await getUserModel();
+    const content = await compressUserModel(current.content, extraction.userSignals);
+    await setUserModel(content);
+  }
+
   return {
-    affectedEntityIds: [...new Set(affectedEntityIds)],
-    userSignals: extracted.userSignals ?? [],
+    entities: createdEntities,
+    relationships: extraction.relationships ?? [],
+    communitySummary: extraction.communitySummary ?? null,
   };
 }
 
-export async function runDreamCycle(limit: number): Promise<{
-  processedMessages: number;
-  affectedEntityIds: string[];
-  userSignals: string[];
-}> {
-  const recentMessages = await listRecentMessages(limit);
-  if (recentMessages.length === 0) {
-    return { processedMessages: 0, affectedEntityIds: [], userSignals: [] };
-  }
+export async function runDreamCycle() {
+  const recentMessages = await db
+    .select()
+    .from(schema.messages)
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(20);
 
-  const conversation = recentMessages
-    .map((message) => `[${message.session_id}] ${message.role.toUpperCase()}: ${message.content}`)
-    .join("\n\n");
+  const ordered = [...recentMessages].reverse().map((message) => ({ role: message.role, content: message.content }));
+  const dream = await dreamFromConversationWindow(ordered);
 
-  const dreamed = await dreamFromConversationWindow(conversation);
-  const affectedEntityIds: string[] = [];
-  const nameToId = new Map<string, string>();
-
-  for (const entity of dreamed.entities ?? []) {
-    let existing = await findEntityByName(entity.name);
-    if (!existing) {
-      existing = await createEntity({
-        id: crypto.randomUUID(),
-        name: entity.name,
-        type: entity.type,
-        properties: {
-          ...(entity.properties ?? {}),
-          inferredBy: "dreaming",
-        },
-      });
+  for (const skill of dream.skills ?? []) {
+    const existing = await listSkills({ search: skill.name, limit: 1 });
+    if (existing.skills.length === 0) {
+      await createSkill({ name: skill.name, content: skill.content, tags: skill.tags ?? [] }).catch(() => undefined);
     }
-    nameToId.set(entity.name, existing.id);
-    affectedEntityIds.push(existing.id);
   }
 
-  for (const relationship of dreamed.relationships ?? []) {
-    const sourceId = nameToId.get(relationship.source);
-    const targetId = nameToId.get(relationship.target);
-    if (!sourceId || !targetId) continue;
-
-    await createRelationship({
-      id: crypto.randomUUID(),
-      source: sourceId,
-      target: targetId,
-      type: relationship.type,
-      properties: {
-        ...(relationship.properties ?? {}),
-        inferredBy: "dreaming",
-      },
-    });
-  }
-
-  if (dreamed.communitySummary && affectedEntityIds.length > 0) {
-    await upsertCommunity({
-      id: crypto.randomUUID(),
-      name: dreamed.communityName ?? "Dreamed Insight Cluster",
-      summary: dreamed.communitySummary,
-      level: 0,
-      entityIds: [...new Set(affectedEntityIds)],
-    });
-  }
-
-  // Create suggested tools (skip duplicates by name)
-  for (const toolSuggestion of dreamed.suggestedTools ?? []) {
-    const existing = await listTools({ search: toolSuggestion.name, limit: 1 });
-    const exactMatch = existing.tools.find(
-      (t) => t.name.toLowerCase() === toolSuggestion.name.toLowerCase(),
-    );
-    if (!exactMatch) {
+  for (const tool of dream.tools ?? []) {
+    const existing = await listTools({ search: tool.name, limit: 1 });
+    if (existing.tools.length === 0) {
       await createTool({
-        name: toolSuggestion.name,
-        description: toolSuggestion.description,
-        instructions: toolSuggestion.instructions,
-        tags: [...(toolSuggestion.tags ?? []), "dreamed"],
-      });
-      console.log(`[dreaming] Created tool: ${toolSuggestion.name}`);
+        name: tool.name,
+        description: tool.description,
+        instructions: tool.instructions,
+        inputSchema: tool.inputSchema ?? {},
+        tags: tool.tags ?? [],
+      }).catch(() => undefined);
     }
   }
 
-  // Create suggested skills (skip duplicates by name)
-  for (const skillSuggestion of dreamed.suggestedSkills ?? []) {
-    const existing = await listSkills({ search: skillSuggestion.name });
-    const exactMatch = existing.skills.find(
-      (s) => s.name.toLowerCase() === skillSuggestion.name.toLowerCase(),
-    );
-    if (!exactMatch) {
-      await createSkill({
-        name: skillSuggestion.name,
-        content: skillSuggestion.content,
-        tags: [...(skillSuggestion.tags ?? []), "dreamed"],
-      });
-      console.log(`[dreaming] Created skill: ${skillSuggestion.name}`);
-    }
+  if (dream.userSignals?.length) {
+    const current = await getUserModel();
+    const content = await compressUserModel(current.content, dream.userSignals);
+    await setUserModel(content);
   }
 
-  const currentUserModel = await getUserModel();
-  const updatedUserModel = await compressUserModel(
-    currentUserModel.content,
-    dreamed.userSignals ?? [],
-  );
-  await setUserModel(updatedUserModel);
-
-  return {
-    processedMessages: recentMessages.length,
-    affectedEntityIds: [...new Set(affectedEntityIds)],
-    userSignals: dreamed.userSignals ?? [],
-  };
+  return dream;
 }

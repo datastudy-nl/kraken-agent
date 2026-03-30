@@ -49,6 +49,74 @@ export async function initPostgresSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS messages_created_idx ON messages(created_at)
   `);
 
+
+
+  // --- Curated memory items ---
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS memory_items (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id uuid REFERENCES sessions(id) ON DELETE SET NULL,
+      kind text NOT NULL,
+      status text NOT NULL DEFAULT 'active',
+      scope text NOT NULL DEFAULT 'user',
+      source_type text NOT NULL,
+      content text NOT NULL,
+      tags jsonb NOT NULL DEFAULT '[]'::jsonb,
+      confidence integer NOT NULL DEFAULT 100,
+      importance integer NOT NULL DEFAULT 80,
+      reuse_count integer NOT NULL DEFAULT 0,
+      last_retrieved_at timestamptz,
+      last_confirmed_at timestamptz,
+      expires_at timestamptz,
+      superseded_by uuid,
+      embedding vector(1536),
+      search_vector tsvector,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_status_idx ON memory_items(status)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_scope_idx ON memory_items(scope)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_created_idx ON memory_items(created_at)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_embedding_idx
+    ON memory_items USING ivfflat (embedding vector_cosine_ops)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_search_idx
+    ON memory_items USING gin(search_vector)
+  `);
+  await db.execute(sql`
+    CREATE OR REPLACE FUNCTION memory_items_search_trigger() RETURNS trigger AS $$
+    BEGIN
+      NEW.search_vector := to_tsvector('english', COALESCE(NEW.content, ''));
+      RETURN NEW;
+    END
+    $$ LANGUAGE plpgsql
+  `);
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'memory_items_search_update'
+      ) THEN
+        CREATE TRIGGER memory_items_search_update
+        BEFORE INSERT OR UPDATE ON memory_items
+        FOR EACH ROW EXECUTE FUNCTION memory_items_search_trigger();
+      END IF;
+    END $$
+  `);
+  await db.execute(sql`
+    UPDATE memory_items SET search_vector = to_tsvector('english', content)
+    WHERE search_vector IS NULL
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS skills (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
