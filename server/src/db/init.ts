@@ -222,6 +222,11 @@ export async function initPostgresSchema(): Promise<void> {
     ON messages USING ivfflat (embedding vector_cosine_ops)
   `);
 
+  // --- Message triple columns ---
+  await db.execute(sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS subject text`);
+  await db.execute(sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS predicate text`);
+  await db.execute(sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS object text`);
+
   // --- Session personality overlay (Step 5) ---
   await db.execute(sql`
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS personality text
