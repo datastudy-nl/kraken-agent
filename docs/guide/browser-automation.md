@@ -6,7 +6,7 @@ description: Headless Chromium for web research, data extraction, and screenshot
 
 # Browser Automation
 
-Kraken includes a headless Chromium browser accessible to the agent as a built-in tool. This enables web research, data extraction, form filling, and screenshot capture — all from within a conversation.
+Your personal assistant can browse the web. Kraken includes a headless Chromium browser as a built-in tool, enabling web research, data extraction, form filling, and screenshot capture — all from within a conversation.
 
 ## Architecture
 

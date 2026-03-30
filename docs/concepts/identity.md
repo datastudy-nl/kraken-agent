@@ -6,7 +6,7 @@ description: SOUL.md personality, user model, and cross-platform identity linkin
 
 # Identity System
 
-Kraken doesn't just know what you've said — it knows *who you are*. The identity system gives the agent a consistent personality and builds a deepening model of every user it interacts with.
+Kraken doesn't just know what you've said — it knows *who you are*. Because you deploy one instance and connect all your platforms to it, the identity system builds a unified picture of you across Discord, Telegram, CLI, and anything else. It gives the agent a consistent personality and develops a deepening model of every user it interacts with.
 
 ## SOUL.md — The Agent's Personality
 

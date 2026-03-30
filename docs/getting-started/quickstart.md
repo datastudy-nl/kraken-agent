@@ -1,12 +1,12 @@
 ---
 layout: layouts/docs.njk
 title: Quick Start
-description: Get Kraken running in under 5 minutes with Docker Compose
+description: Deploy your personal AI assistant in under 5 minutes
 ---
 
 # Quick Start
 
-Get Kraken running in under 5 minutes with Docker Compose.
+Deploy your personal AI assistant in under 5 minutes with Docker Compose. One instance handles everything — coding, research, scheduling, browsing, automation — across every platform you connect. The more you use it, the smarter it gets.
 
 ## Prerequisites
 
@@ -49,16 +49,18 @@ That's all you need. Everything else has sensible defaults.
 docker-compose up -d
 ```
 
-This starts six services:
+This starts six services — the full brain of your personal assistant:
 
 | Service | Purpose |
 |---------|---------|
-| **kraken-api** | REST API on port `8080` |
+| **kraken-api** | REST API on port `8080` — your assistant's front door |
 | **worker** | Background jobs (memory extraction, skill reflection, scheduling) |
 | **postgres** | PostgreSQL 17 with pgvector (sessions, messages, skills, embeddings) |
 | **neo4j** | Neo4j 5 (knowledge graph — entities, relationships, communities) |
 | **redis** | Redis 7 (job queues, session cache) |
 | **chromium** | Headless browser for web automation |
+
+Once running, connect any number of platforms to this single instance — Discord, Telegram, CLI tools, cron jobs, or your own apps. They all talk to the same brain.
 
 ## 4. Initialize the database
 
@@ -148,12 +150,17 @@ When you send a message, Kraken:
 6. **Stores the response** with embedding
 7. **Queues background jobs** — entity extraction, user model update, skill reflection, community re-clustering
 
-Every conversation makes Kraken smarter. It's not just answering — it's learning.
+Every conversation makes Kraken smarter. It's not just answering — it's building a permanent understanding of who you are, what you're working on, and how you like things done. This is the assistant you deploy once and keep running.
 
 ---
 
 ## Next steps
 
+Your assistant is running. Now connect it to your life:
+
+- [Discord Bot](../guide/discord-bot.md) — talk to your assistant from Discord
+- [Scheduled Tasks](../guide/scheduled-tasks.md) — automate recurring work
+- [Browser Automation](../guide/browser-automation.md) — let it research the web for you
 - [Configuration](configuration.md) — all environment variables and tuning options
 - [Memory System](../concepts/memory.md) — how the knowledge graph works
 - [Python SDK](../guide/python-sdk.md) — full SDK reference with examples

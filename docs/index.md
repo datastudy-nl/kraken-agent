@@ -1,12 +1,12 @@
 ---
 layout: layouts/home.njk
 title: ""
-description: The self-improving AI agent with relational memory
+description: Deploy once. Your AI assistant for everything.
 ---
 
 <section class="hero">
-  <h1>The AI agent that actually remembers you</h1>
-  <p class="tagline">Kraken builds a living knowledge graph from every conversation. It auto-creates reusable skills, maintains a persistent identity, and gets smarter over time. Self-hosted, open source, OpenAI-compatible.</p>
+  <h1>Your personal AI assistant. Deploy once, use for everything.</h1>
+  <p class="tagline">Kraken is a self-hosted AI assistant you run on your own hardware. One instance handles coding, research, scheduling, browsing, and automation across every platform you connect. It builds a knowledge graph from every conversation, auto-creates reusable skills, and gets smarter the longer you use it.</p>
   <div class="hero-actions">
     <a href="/getting-started/quickstart/" class="btn btn-primary">Get Started</a>
     <a href="/concepts/architecture/" class="btn btn-secondary">How it works</a>
@@ -35,27 +35,27 @@ for entity in results.entities:
 </div>
 
 <div class="section-header">
-  <h2>What makes Kraken different</h2>
-  <p>Not another wrapper around a chat API. A fundamentally different architecture.</p>
+  <h2>Why Kraken instead of a dozen separate tools</h2>
+  <p>One assistant with one memory. Not another wrapper around a chat API.</p>
 </div>
 
 <div class="feature-grid">
   <div class="feature-card">
     <span class="feature-card-icon">🔗</span>
     <h3>Relational Memory</h3>
-    <p>A Neo4j knowledge graph with entities, relationships, and hierarchical communities. Five query modes that retrieve exactly what's relevant.</p>
+    <p>Every conversation from every channel feeds the same knowledge graph. Your assistant knows your projects, preferences, and goals across Discord, Telegram, CLI, and anything else you connect.</p>
     <a href="/concepts/memory/">Memory System</a>
   </div>
   <div class="feature-card">
     <span class="feature-card-icon">🪪</span>
     <h3>Persistent Identity</h3>
-    <p>A <code>SOUL.md</code> personality file you control. An auto-maintained user model that tracks your preferences, expertise, and goals across platforms.</p>
+    <p>A <code>SOUL.md</code> personality file you control. An auto-maintained user model that deepens over time. Your assistant learns how you think and what you care about.</p>
     <a href="/concepts/identity/">Identity System</a>
   </div>
   <div class="feature-card">
     <span class="feature-card-icon">⚡</span>
     <h3>Self-Improving</h3>
-    <p>Skills auto-created after complex tasks. A reflection loop that persists what it learned. The agent gets better at what you actually do.</p>
+    <p>Complex workflows become reusable skills automatically. The more you use Kraken for real tasks, the better it gets at helping you with similar tasks in the future.</p>
     <a href="/concepts/skills/">Skills</a>
   </div>
   <div class="feature-card">
@@ -73,7 +73,7 @@ for entity in results.entities:
   <div class="feature-card">
     <span class="feature-card-icon">🛡️</span>
     <h3>Sandboxed & Self-Hosted</h3>
-    <p>Run on your infrastructure. Docker-isolated code execution with resource limits. Playwright browser automation with SSRF protection.</p>
+    <p>Runs entirely on your hardware. Docker-isolated code execution with networking and port forwarding. Browser automation with SSRF protection. Your data never leaves your infrastructure.</p>
     <a href="/concepts/architecture/">Architecture</a>
   </div>
 </div>

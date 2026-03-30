@@ -6,7 +6,7 @@ description: Auto-created skills, reflection loop, and progressive disclosure
 
 # Skills & Self-Improvement
 
-Most agents start from zero every time. You explain a workflow, they execute it, and tomorrow they've forgotten the whole thing. Kraken learns from experience. When it solves a complex problem, it writes down what it did — as a **skill** — so it can do it better next time.
+Most agents start from zero every time. You explain a workflow, they execute it, and tomorrow they've forgotten the whole thing. Since Kraken is your personal assistant that stays running, it learns from experience. When it solves a complex problem, it writes down what it did — as a **skill** — so it can do it better next time. The longer you use your instance, the more capable it becomes at the things you actually do.
 
 ## What is a skill?
 

@@ -6,7 +6,7 @@ description: Build a Discord bot with persistent memory and self-improving skill
 
 # Discord Bot
 
-This guide walks through building a Discord bot powered by Kraken Agent. Each Discord user gets their own persistent session with full memory, identity, and self-improving skills.
+This guide walks through connecting your Kraken instance to Discord — one of the many ways to talk to your personal assistant. Each Discord user gets their own persistent session with full memory, identity, and self-improving skills. Same Kraken, same brain, just another channel.
 
 ## Prerequisites
 

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>The self-improving AI agent with relational memory.</strong>
+  <strong>Deploy once. Your AI assistant for everything.</strong>
 </p>
 
 <p align="center">
@@ -14,9 +14,9 @@
 
 ---
 
-**Kraken** is an open-source, persistent AI agent that remembers you through a knowledge graph, learns workflows as reusable skills, and grows a deepening model of who you are across sessions. Most agents forget you the moment the conversation ends. Kraken doesn't.
+**Kraken** is an open-source AI personal assistant you deploy once and use for everything. It runs on your own hardware, remembers you through a knowledge graph, and gets smarter the more you use it. One instance handles coding, research, scheduling, browsing, automation — anything you throw at it — across every platform you connect.
 
-Deploy with a single `docker-compose up`. Talk to it from Discord, Telegram, WhatsApp, or any HTTP client. It doesn't just respond — it remembers contextual relationships, learns your workflows, and develops a deepening understanding of you.
+Deploy with a single `docker-compose up`. Wire it into Discord, Telegram, WhatsApp, a CLI, or any HTTP client. Every conversation from every channel feeds the same memory, skills, and user model. Over time, Kraken becomes the single AI that actually knows you — your projects, preferences, workflows, and goals.
 
 📚 **Full documentation:** [kraken-agent.com](https://kraken-agent.com)
 
@@ -24,9 +24,9 @@ Deploy with a single `docker-compose up`. Talk to it from Discord, Telegram, Wha
 <tr><td><b>GraphRAG Memory</b></td><td>Neo4j knowledge graph with entities, relationships, and hierarchical communities. Five query modes — <code>auto</code>, <code>local</code>, <code>global</code>, <code>drift</code>, <code>basic</code> — plus episodic message search with pgvector embeddings.</td></tr>
 <tr><td><b>Identity System</b></td><td>User-editable <code>SOUL.md</code> personality file injected into every prompt. Auto-maintained user model that tracks preferences, expertise, and goals. Cross-platform identity linking maps the same person across Discord, Telegram, and more.</td></tr>
 <tr><td><b>Self-Improving</b></td><td>Skills auto-created after complex tasks (5+ tool calls or error recovery). Reflection loop evaluates conversations and persists learned procedures. Skills self-improve during use and load via relevance search.</td></tr>
-<tr><td><b>Multi-Channel</b></td><td>Session routing with stable keys (<code>discord-12345</code>, <code>telegram-user</code>) keeps context across platforms. Identity links let the agent recognize you everywhere. Build integrations with the Python SDK or any HTTP client.</td></tr>
-<tr><td><b>Sandboxed Execution</b></td><td>Docker-isolated code execution with memory/CPU limits and read-only root filesystem. Playwright-based browser automation via headless Chromium with SSRF protection.</td></tr>
-<tr><td><b>Scheduled Automations</b></td><td>Cron-based task scheduling with natural-language definitions. Tasks run as new sessions and can deliver results to any connected platform.</td></tr>
+<tr><td><b>One Brain, Every Channel</b></td><td>Connect Discord, Telegram, WhatsApp, a CLI, or any HTTP client to the same instance. Session routing with stable keys keeps each conversation thread separate, but identity links let the agent recognize you everywhere. One deployment, one unified memory.</td></tr>
+<tr><td><b>Sandboxed Execution</b></td><td>Docker-isolated code execution with networking, port forwarding, and background server support. Playwright-based browser automation via headless Chromium with SSRF protection. Your assistant can write code, run it, and serve it.</td></tr>
+<tr><td><b>Scheduled Automations</b></td><td>Tell your assistant "check this RSS feed every morning" and it does. Cron-based scheduling with natural-language definitions. Tasks run as full sessions with memory and tool access, and deliver results to any connected platform.</td></tr>
 <tr><td><b>OpenAI-Compatible</b></td><td>Drop-in <code>/v1/chat/completions</code> endpoint works with any OpenAI client library. Kraken extensions (<code>session_key</code>, memory queries) ride alongside the standard API.</td></tr>
 <tr><td><b>Python SDK</b></td><td>Type-safe client for chat, memory, skills, sessions, and identity. Streaming support, session routing, and graph visualization out of the box.</td></tr>
 </table>

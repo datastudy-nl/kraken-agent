@@ -6,7 +6,7 @@ description: GraphRAG knowledge graph, query modes, and context compaction
 
 # Memory System
 
-Kraken's memory is what separates it from every other agent. While most systems treat memory as a flat list of facts crammed into the context window, Kraken builds a **structured knowledge graph** that it queries intelligently based on what you're actually asking.
+Kraken's memory is what makes it a real personal assistant instead of a disposable chatbot. Everything you tell it — across Discord, Telegram, CLI, scheduled tasks, and direct API calls — feeds the same knowledge graph. While most systems treat memory as a flat list of facts crammed into the context window, Kraken builds a **structured knowledge graph** that it queries intelligently based on what you're actually asking.
 
 ## Memory Tiers
 

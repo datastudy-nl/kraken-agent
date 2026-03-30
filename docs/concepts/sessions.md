@@ -6,7 +6,7 @@ description: Session keys, personality overlays, and context compaction
 
 # Sessions & Routing
 
-Sessions are Kraken's unit of conversation. Every message belongs to a session, and sessions persist across API calls. This is how Kraken maintains context — not just within a single request, but across hours, days, or weeks of interaction.
+Sessions are how Kraken keeps conversations organized across every platform you connect to it. Since you deploy one Kraken instance as your personal assistant for everything, sessions let you maintain separate conversation threads — one for your Discord DMs, one for Telegram, one for a CLI tool — while all feeding the same shared memory, skills, and user model.
 
 ## Session Keys
 

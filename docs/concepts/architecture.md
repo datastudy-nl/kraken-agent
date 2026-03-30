@@ -6,7 +6,7 @@ description: System overview, components, and data flow
 
 # Architecture
 
-Kraken is a self-contained stack that runs via Docker Compose. No external services, no third-party memory providers, no vendor lock-in. Every component runs on your infrastructure.
+Kraken is a self-contained stack that runs via Docker Compose. You deploy it once on your own hardware and it becomes your personal AI assistant for everything — coding, research, scheduling, browsing, automation. No external services, no third-party memory providers, no vendor lock-in. Every conversation from every connected platform feeds the same brain.
 
 ## System Overview
 

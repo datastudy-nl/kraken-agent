@@ -6,7 +6,7 @@ description: Cron-based task scheduling with full agent capabilities
 
 # Scheduled Tasks
 
-Kraken can run tasks on a cron schedule — no external scheduler needed. Scheduled tasks execute as new conversations, with full access to the knowledge graph, skills, and tools.
+A real personal assistant doesn't wait for you to ask. Kraken can run tasks on a cron schedule — no external scheduler needed. Tell it "summarize my GitHub notifications every morning" or "check this RSS feed weekly" and it just does it. Scheduled tasks execute as full conversations, with access to the knowledge graph, skills, and all tools.
 
 ## Creating a Schedule
 
