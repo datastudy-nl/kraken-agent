@@ -104,7 +104,7 @@ services:
     image: neo4j:5-community
     environment:
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-kraken}
-      - NEO4J_server_bolt_enabled=false
+      - NEO4J_server_bolt_enabled=true
       - NEO4J_server_http_enabled=true
       - NEO4J_server_https_enabled=false
     ports:
