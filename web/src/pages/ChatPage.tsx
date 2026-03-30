@@ -15,7 +15,7 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [timeline, setTimeline] = useState<Array<{ label: string; state: "running" | "done" | "error" }>>([]);
+  const [timeline, setTimeline] = useState<Array<{ label: string; state: "running" | "done" | "error"; count: number; pending: number }>>([]);
   const [sessionKey, setSessionKey] = useState<string>("");
   const [model, setModel] = useState("kraken-omni-2.7");
   const [models, setModels] = useState<Array<{ id: string }>>([]);
@@ -99,26 +99,33 @@ export function ChatPage() {
           const status = chunk.status ?? "";
           const label = chunk.detail ?? status;
           if (status === "tool_call") {
-            // Mark previous running step as done, add new running step
-            setTimeline((prev) => [
-              ...prev.map((s) => s.state === "running" ? { ...s, state: "done" as const } : s),
-              { label, state: "running" },
-            ]);
+            setTimeline((prev) => {
+              const existing = prev.find((s) => s.label === label && s.state === "running");
+              if (existing) {
+                return prev.map((s) => s === existing ? { ...s, count: s.count + 1, pending: s.pending + 1 } : s);
+              }
+              return [
+                ...prev.map((s) => s.state === "running" ? { ...s, state: "done" as const } : s),
+                { label, state: "running" as const, count: 1, pending: 1 },
+              ];
+            });
           } else if (status === "tool_result") {
-            // Mark the matching running step as done
             setTimeline((prev) => prev.map((s) =>
-              s.state === "running" && s.label === label ? { ...s, state: "done" } : s
+              s.state === "running" && s.label === label
+                ? { ...s, pending: s.pending - 1, state: s.pending <= 1 ? "done" as const : s.state }
+                : s
             ));
           } else if (status === "tool_error") {
-            // Mark the matching running step as error
             setTimeline((prev) => prev.map((s) =>
-              s.state === "running" && s.label === label ? { ...s, state: "error" } : s
+              s.state === "running" && s.label === label
+                ? { ...s, pending: s.pending - 1, state: s.pending <= 1 ? "error" as const : s.state }
+                : s
             ));
           } else {
             // Pre-stream steps (searching_memory, compacting, generating)
             setTimeline((prev) => [
               ...prev.map((s) => s.state === "running" ? { ...s, state: "done" as const } : s),
-              { label, state: "running" },
+              { label, state: "running" as const, count: 1, pending: 1 },
             ]);
           }
         } else if (chunk.type === "content" && chunk.content) {
@@ -270,7 +277,7 @@ export function ChatPage() {
                                   step.state === "running" ? "text-foreground" :
                                   step.state === "error" ? "text-destructive" :
                                   "text-muted-foreground"
-                                )}>{step.label}</span>
+                                )}>{step.label}{step.count > 1 && ` ×${step.count}`}</span>
                               </div>
                             ))}
                           </div>
@@ -332,7 +339,7 @@ export function ChatPage() {
                     step.state === "running" ? "text-foreground" :
                     step.state === "error" ? "text-destructive" :
                     "text-muted-foreground"
-                  )}>{step.label}</span>
+                  )}>{step.label}{step.count > 1 && ` ×${step.count}`}</span>
                 </div>
               ))}
             </div>

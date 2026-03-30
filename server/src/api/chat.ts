@@ -283,7 +283,7 @@ chatRouter.post(
           system: fullSystem,
           messages: finalMessages,
           tools,
-          maxSteps: tools ? 16 : undefined,
+          maxSteps: tools ? 64 : undefined,
           temperature: body.temperature,
           topP: body.top_p,
           maxTokens: body.max_tokens,
@@ -291,29 +291,37 @@ chatRouter.post(
 
         let collectedText = "";
 
-        for await (const part of result.fullStream) {
-          if (part.type === "tool-call") {
-            await sendStatus(stream, "tool_call", part.toolName);
-          } else if (part.type === "tool-result") {
-            const hasError = part.result != null && typeof part.result === "object" && "error" in (part.result as Record<string, unknown>);
-            await sendStatus(stream, hasError ? "tool_error" : "tool_result", part.toolName);
-          } else if (part.type === "text-delta") {
-            collectedText += part.textDelta;
-            const sseData = JSON.stringify({
-              id: completionId,
-              object: "chat.completion.chunk",
-              created,
-              model: modelName,
-              choices: [
-                {
-                  index: 0,
-                  delta: { content: part.textDelta },
-                  finish_reason: null,
-                },
-              ],
-            });
-            await stream.write(`data: ${sseData}\n\n`);
+        try {
+          for await (const part of result.fullStream) {
+            if (part.type === "tool-call") {
+              await sendStatus(stream, "tool_call", part.toolName);
+            } else if (part.type === "tool-result") {
+              const hasError = part.result != null && typeof part.result === "object" && "error" in (part.result as Record<string, unknown>);
+              await sendStatus(stream, hasError ? "tool_error" : "tool_result", part.toolName);
+            } else if (part.type === "error") {
+              console.error("[stream] error part:", part.error);
+              await sendStatus(stream, "tool_error", String(part.error));
+            } else if (part.type === "text-delta") {
+              collectedText += part.textDelta;
+              const sseData = JSON.stringify({
+                id: completionId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelName,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: part.textDelta },
+                    finish_reason: null,
+                  },
+                ],
+              });
+              await stream.write(`data: ${sseData}\n\n`);
+            }
           }
+        } catch (err) {
+          console.error("[stream] fullStream error:", err);
+          await sendStatus(stream, "tool_error", "Stream error — response may be incomplete");
         }
 
         // Final chunk
