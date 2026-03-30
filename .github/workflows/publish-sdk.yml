@@ -62,7 +62,7 @@ jobs:
           path: dist/
 
       - name: Install from wheel
-        run: pip install dist/*.whl
+        run: pip install ../../dist/*.whl
 
       - name: Verify import
         run: python -c "from kraken import KrakenClient; print('OK')"
