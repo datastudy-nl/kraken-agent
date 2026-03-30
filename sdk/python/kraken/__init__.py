@@ -11,6 +11,7 @@ from kraken.models import (
     Session,
     Skill,
     Tool,
+    TranscriptionResult,
 )
 from kraken.tools import Tools
 
@@ -26,6 +27,7 @@ __all__ = [
     "Session",
     "Skill",
     "Tool",
+    "TranscriptionResult",
 ]
 
 __version__ = "0.1.0"

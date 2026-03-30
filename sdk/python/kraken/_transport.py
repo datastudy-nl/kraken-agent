@@ -61,6 +61,30 @@ class Transport:
                 if chunk:
                     yield chunk
 
+    def post_multipart(
+        self,
+        path: str,
+        files: dict[str, tuple[str, bytes, str]],
+        data: dict[str, str] | None = None,
+    ) -> Any:
+        resp = self._client.post(
+            path,
+            files=files,
+            data=data,
+            headers={"Content-Type": None},  # let httpx set multipart boundary
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def post_binary(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+    ) -> bytes:
+        resp = self._client.post(path, json=json)
+        resp.raise_for_status()
+        return resp.content
+
     def close(self) -> None:
         self._client.close()
 
@@ -117,6 +141,30 @@ class AsyncTransport:
             async for chunk in resp.aiter_text():
                 if chunk:
                     yield chunk
+
+    async def post_multipart(
+        self,
+        path: str,
+        files: dict[str, tuple[str, bytes, str]],
+        data: dict[str, str] | None = None,
+    ) -> Any:
+        resp = await self._client.post(
+            path,
+            files=files,
+            data=data,
+            headers={"Content-Type": None},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def post_binary(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+    ) -> bytes:
+        resp = await self._client.post(path, json=json)
+        resp.raise_for_status()
+        return resp.content
 
     async def close(self) -> None:
         await self._client.aclose()

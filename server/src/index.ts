@@ -17,6 +17,7 @@ import { workspacesRouter } from "./api/workspaces.js";
 import { sandboxesRouter } from "./api/sandboxes.js";
 import { modelsRouter } from "./api/models.js";
 import { secretsRouter } from "./api/secrets.js";
+import { voiceRouter } from "./api/voice.js";
 import { bootstrap } from "./bootstrap.js";
 import { config } from "./config.js";
 
@@ -68,6 +69,7 @@ app.route("/v1/identity", identityRouter);
 app.route("/v1/schedules", schedulesRouter);
 app.route("/v1/sandboxes", sandboxesRouter);
 app.route("/v1/secrets", secretsRouter);
+app.route("/v1/voice", voiceRouter);
 // Workspace endpoints (/:id/workspace/*) are mounted under the same /v1/sessions
 // prefix because they are session-scoped operations, but live in a separate router
 // for code organization. See api/workspaces.ts.

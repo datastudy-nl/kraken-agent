@@ -164,3 +164,10 @@ class Schedule(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+# --- Voice ---
+class TranscriptionResult(BaseModel):
+    text: str
+    language: str | None = None
+    duration: float | None = None

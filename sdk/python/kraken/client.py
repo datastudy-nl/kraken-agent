@@ -13,6 +13,7 @@ from kraken.schedules import Schedules
 from kraken.sessions import Sessions
 from kraken.skills import Skills
 from kraken.tools import Tools
+from kraken.voice import Voice
 
 
 class KrakenClient:
@@ -63,6 +64,7 @@ class KrakenClient:
         self.tools = Tools(self._transport)
         self.identity = Identity(self._transport)
         self.schedules = Schedules(self._transport)
+        self.voice = Voice(self._transport)
 
     # --- Chat (top-level convenience) ---
 

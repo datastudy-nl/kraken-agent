@@ -12,6 +12,7 @@ from kraken.async_schedules import AsyncSchedules
 from kraken.async_sessions import AsyncSessions
 from kraken.async_skills import AsyncSkills
 from kraken.async_tools import AsyncTools
+from kraken.async_voice import AsyncVoice
 from kraken.models import ChatResponse, HealthStatus
 
 
@@ -35,6 +36,7 @@ class AsyncKrakenClient:
         self.tools = AsyncTools(self._transport)
         self.identity = AsyncIdentity(self._transport)
         self.schedules = AsyncSchedules(self._transport)
+        self.voice = AsyncVoice(self._transport)
 
     async def chat(
         self,
@@ -44,6 +46,7 @@ class AsyncKrakenClient:
         session_key: str | None = None,
         session_name: str | None = None,
         model: str | None = None,
+        images: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ChatResponse:
         payload: dict[str, Any] = {"message": message, "stream": False}
@@ -56,6 +59,8 @@ class AsyncKrakenClient:
         selected_model = model or self.model
         if selected_model:
             payload["model"] = selected_model
+        if images:
+            payload["images"] = images
         if metadata:
             payload["metadata"] = metadata
 
@@ -70,6 +75,7 @@ class AsyncKrakenClient:
         session_key: str | None = None,
         session_name: str | None = None,
         model: str | None = None,
+        images: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         payload: dict[str, Any] = {"message": message, "stream": True}
@@ -82,6 +88,8 @@ class AsyncKrakenClient:
         selected_model = model or self.model
         if selected_model:
             payload["model"] = selected_model
+        if images:
+            payload["images"] = images
         if metadata:
             payload["metadata"] = metadata
 
