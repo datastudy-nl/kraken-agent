@@ -104,16 +104,19 @@ services:
     image: neo4j:5-community
     environment:
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-kraken}
+      - NEO4J_server_bolt_enabled=false
+      - NEO4J_server_http_enabled=true
+      - NEO4J_server_https_enabled=false
     ports:
       - "${NEO4J_BROWSER_PORT:-7474}:7474"
     volumes:
       - neo4j-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || wget -q --spider http://localhost:7687 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7474 >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 18
-      start_period: 60s
+      retries: 30
+      start_period: 120s
     restart: unless-stopped
 
   chromium:
