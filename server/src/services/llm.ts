@@ -83,7 +83,7 @@ export async function extractStructuredMemoryTriple(
 
 Rules:
 - Return exactly one triple.
-- subject should usually be \"user\" for user facts/preferences/goals, or a stable entity like \"project\" when appropriate.
+- subject should usually be "user" for user facts/preferences/goals, or a stable entity like "project" when appropriate.
 - predicate must be one of: prefers, avoids, has_name, works_on, has_goal, has_constraint, has_code, states.
 - object should be the normalized core value of the memory.
 - Do not paraphrase into free-form summaries.

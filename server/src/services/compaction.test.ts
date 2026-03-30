@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // Mock heavy side-effect modules before importing compaction
 vi.mock("../config.js", () => ({

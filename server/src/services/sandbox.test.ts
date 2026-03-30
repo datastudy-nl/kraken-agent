@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import path from "node:path";
 
 // We test the path validation logic in isolation by extracting the pattern

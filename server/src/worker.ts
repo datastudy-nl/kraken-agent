@@ -17,7 +17,6 @@ import { getUserModel, setUserModel } from "./services/identity.js";
 import { upsertCommunity } from "./services/graph.js";
 import { getDueSchedules, executeSchedule } from "./services/schedules.js";
 import { reflectAndImprove, shouldReflect } from "./services/reflection.js";
-import { closePage } from "./services/browser.js";
 
 const connection = new IORedis(config.REDIS_URL, {
   maxRetriesPerRequest: null,

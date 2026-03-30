@@ -10,11 +10,6 @@ export interface ContextInput {
   personality?: string | null;
 }
 
-/** Rough token estimation: ~4 chars per token. */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
 /** Truncate text to fit within a token budget. */
 function truncateToTokens(text: string, maxTokens: number): string {
   const maxChars = maxTokens * 4;

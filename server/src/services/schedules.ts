@@ -119,7 +119,6 @@ export async function updateSchedule(
   });
   if (!existing) return null;
 
-  const cronExpr = input.cronExpression ?? existing.cronExpression;
   if (input.cronExpression && !cron.validate(input.cronExpression)) {
     throw new Error(`Invalid cron expression: ${input.cronExpression}`);
   }
@@ -350,8 +349,8 @@ function matchesCron(expr: string, date: Date): boolean {
 function matchField(
   field: string,
   value: number,
-  min: number,
-  max: number,
+  _min: number,
+  _max: number,
 ): boolean {
   if (field === "*") return true;
 
@@ -376,15 +375,6 @@ function matchField(
   }
 
   return false;
-}
-
-function parseCronToMs(cronExpression: string): number {
-  // Rough estimate for simple intervals
-  const parts = cronExpression.trim().split(/\s+/);
-  if (parts[0].startsWith("*/")) {
-    return parseInt(parts[0].slice(2), 10) * 60_000;
-  }
-  return 3_600_000; // default 1h
 }
 
 function formatSchedule(row: typeof schema.schedules.$inferSelect) {
