@@ -281,6 +281,53 @@ describe("curated memory items", () => {
     expect(result.inferredMemories[0].content).toBe("User likes direct answers");
   });
 
+
+  it("queryMemory ranks explicit memories with stronger provenance above weak inferred ones", async () => {
+    state.searchRows = [
+      {
+        id: "mem-1",
+        content: "User prefers short practical answers",
+        kind: "preference",
+        scope: "user",
+        sourceType: "user_explicit",
+        status: "active",
+        tags: ["preference"],
+        metadata: { evidence: [{ type: "message", id: "msg-1" }, { type: "message", id: "msg-2" }] },
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-02T00:00:00Z"),
+        confidence: 100,
+        importance: 95,
+        reuseCount: 2,
+        lastRetrievedAt: new Date("2026-01-03T00:00:00Z"),
+        lastConfirmedAt: new Date("2026-01-03T00:00:00Z"),
+        expiresAt: null,
+      },
+      {
+        id: "mem-2",
+        content: "User maybe enjoys long theoretical digressions",
+        kind: "preference",
+        scope: "user",
+        sourceType: "dream_inference",
+        status: "candidate",
+        tags: [],
+        metadata: { evidence: [{ type: "dream_cycle" }] },
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        confidence: 55,
+        importance: 70,
+        reuseCount: 0,
+        lastRetrievedAt: null,
+        lastConfirmedAt: null,
+        expiresAt: null,
+      },
+    ];
+
+    const result = await queryMemory({ query: "practical answers", mode: "auto", limit: 5, userModel: "" });
+    expect(result.explicitMemories[0].content).toBe("User prefers short practical answers");
+    expect(result.explicitMemories[0].evidenceCount).toBe(2);
+    expect(result.inferredMemories[0].content).toBe("User maybe enjoys long theoretical digressions");
+  });
+
   it("maintenance marks expired or weak memories as stale and archives long-stale memories", async () => {
     state.memoryRows = [
       {

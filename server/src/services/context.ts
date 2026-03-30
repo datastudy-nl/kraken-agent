@@ -22,7 +22,6 @@ function truncateToTokens(text: string, maxTokens: number): string {
   return text.slice(0, maxChars) + "\n\n[...truncated to fit context budget]";
 }
 
-// --- Context budget allocation (in tokens) ---
 const BUDGET = {
   soul: () => Math.ceil(config.KRAKEN_MAX_SOUL_CHARS / 4),
   agentsMd: () => 500,
@@ -30,7 +29,6 @@ const BUDGET = {
   memory: () => 4000,
   skills: () => 1500,
   personality: () => 200,
-  // Conversation history gets the remaining budget
 };
 
 export async function buildSystemPrompt(input: ContextInput): Promise<string> {
@@ -41,9 +39,6 @@ export async function buildSystemPrompt(input: ContextInput): Promise<string> {
     getRelevantSkills(input.message, config.KRAKEN_MAX_SKILLS_PER_QUERY),
   ]);
 
-  // Query memory with user model context so retrieval can find entities
-  // mentioned in the user model even when the current message doesn't
-  // textually overlap (e.g. "what do I like?" → finds "TypeScript" from model)
   const memory = await queryMemory({
     query: input.message,
     mode: "auto",
@@ -52,14 +47,9 @@ export async function buildSystemPrompt(input: ContextInput): Promise<string> {
   });
 
   const sections: string[] = [];
-
-  // 1. SOUL.md (highest priority — always included)
   sections.push(truncateToTokens(soul.content, BUDGET.soul()));
-
-  // 1b. Current time (needed for scheduling, time-aware responses)
   sections.push(`# CURRENT TIME\n\n${new Date().toISOString()}`);
 
-  // 2. Personality overlay (session-level, if active)
   if (input.personality) {
     const overlay = getPersonalityOverlay(input.personality);
     if (overlay) {
@@ -67,34 +57,22 @@ export async function buildSystemPrompt(input: ContextInput): Promise<string> {
     }
   }
 
-  // 3. AGENTS.md (project context)
   if (agentsMd.content) {
-    sections.push(
-      truncateToTokens(`# PROJECT CONTEXT\n\n${agentsMd.content}`, BUDGET.agentsMd()),
-    );
+    sections.push(truncateToTokens(`# PROJECT CONTEXT\n\n${agentsMd.content}`, BUDGET.agentsMd()));
   }
 
-  // 4. User Model
   if (userModel.content) {
-    sections.push(
-      truncateToTokens(`# USER MODEL\n\n${userModel.content}`, BUDGET.userModel()),
-    );
+    sections.push(truncateToTokens(`# USER MODEL\n\n${userModel.content}`, BUDGET.userModel()));
   }
 
-  // 5. Memory context (GraphRAG entities, communities, episodes)
   const memorySection = formatMemory(memory);
   if (memorySection) {
-    sections.push(
-      truncateToTokens(`# MEMORY CONTEXT\n\n${memorySection}`, BUDGET.memory()),
-    );
+    sections.push(truncateToTokens(`# MEMORY CONTEXT\n\n${memorySection}`, BUDGET.memory()));
   }
 
-  // 6. Relevant skills (progressive disclosure)
   if (skills.length > 0) {
     const skillsSection = skills.join("\n\n---\n\n");
-    sections.push(
-      truncateToTokens(`# RELEVANT SKILLS\n\n${skillsSection}`, BUDGET.skills()),
-    );
+    sections.push(truncateToTokens(`# RELEVANT SKILLS\n\n${skillsSection}`, BUDGET.skills()));
   }
 
   return sections.filter(Boolean).join("\n\n---\n\n");
@@ -103,12 +81,19 @@ export async function buildSystemPrompt(input: ContextInput): Promise<string> {
 function formatMemory(memory: Awaited<ReturnType<typeof queryMemory>>): string {
   const lines: string[] = [];
 
-  // Explicit memories get top billing — these are facts the user explicitly asked to remember
   if (memory.explicitMemories && memory.explicitMemories.length > 0) {
-    lines.push("## Stored Memories (curated durable memory items)");
+    lines.push("## Confirmed Facts");
     for (const mem of memory.explicitMemories) {
       const labels = [mem.kind, ...(mem.tags ?? [])].filter(Boolean).join(", ");
-      lines.push(`- ${mem.content} (${labels}; stored: ${mem.timestamp})`);
+      lines.push(`- ${mem.content} (${labels}; evidence: ${mem.evidenceCount}; stored: ${mem.timestamp})`);
+    }
+  }
+
+  if (memory.workingMemory && memory.workingMemory.length > 0) {
+    lines.push("\n## Current Working / Project State");
+    for (const mem of memory.workingMemory.slice(0, 5)) {
+      const labels = [mem.kind, ...(mem.tags ?? [])].filter(Boolean).join(", ");
+      lines.push(`- ${mem.content} (${labels}; evidence: ${mem.evidenceCount})`);
     }
   }
 
@@ -127,18 +112,16 @@ function formatMemory(memory: Awaited<ReturnType<typeof queryMemory>>): string {
   }
 
   if (memory.inferredMemories && memory.inferredMemories.length > 0) {
-    lines.push("\n## Inferred / Lower-Confidence Memory");
+    lines.push("\n## Hypotheses / Lower-Confidence Memory");
     for (const mem of memory.inferredMemories.slice(0, 5)) {
-      lines.push(`- ${mem.content} (${mem.kind}; ${mem.sourceType}; status: ${mem.status})`);
+      lines.push(`- ${mem.content} (${mem.kind}; ${mem.sourceType}; status: ${mem.status}; evidence: ${mem.evidenceCount})`);
     }
   }
 
-  if (memory.results.length > 0) {
-    lines.push("\n## Retrieved Context");
-    for (const result of memory.results.slice(0, 5)) {
-      if (typeof result === "object") {
-        lines.push(`- ${JSON.stringify(result)}`);
-      }
+  if (memory.evidenceEpisodes && memory.evidenceEpisodes.length > 0) {
+    lines.push("\n## Supporting Episode Evidence");
+    for (const episode of memory.evidenceEpisodes.slice(0, 5)) {
+      lines.push(`- [${episode.role}] ${episode.content} (${episode.timestamp})`);
     }
   }
 

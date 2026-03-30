@@ -103,21 +103,62 @@ function inferScopeFromQuery(query: string): MemoryItemScope | null {
   return null;
 }
 
+function extractEvidenceScore(metadata: Record<string, unknown>): number {
+  const evidence = Array.isArray(metadata?.evidence) ? metadata.evidence : [];
+  return Math.min(evidence.length * 0.08, 0.32);
+}
+
+function getSourceTrustBonus(sourceType: MemoryItemSource): number {
+  switch (sourceType) {
+    case "user_explicit":
+      return 0.2;
+    case "graph_extracted":
+      return 0.08;
+    case "assistant_inferred":
+      return 0.04;
+    case "dream_inference":
+      return 0.02;
+    case "compaction_summary":
+      return 0.01;
+    default:
+      return 0;
+  }
+}
+
+function getStatusPenalty(status: MemoryItemStatus): number {
+  switch (status) {
+    case "candidate":
+      return 0.22;
+    case "stale":
+      return 0.35;
+    case "contradicted":
+      return 0.55;
+    case "superseded":
+      return 0.45;
+    case "archived":
+      return 0.6;
+    default:
+      return 0;
+  }
+}
+
 function scoreMemoryItem(item: MemoryItemRecord, query: string, expectedScope?: MemoryItemScope | null): number {
   const now = Date.now();
   const createdAgeDays = Math.max(0, (now - item.createdAt.getTime()) / (1000 * 60 * 60 * 24));
   const freshnessPenalty = Math.min(createdAgeDays / 365, 0.35);
   const reuseBonus = Math.min(item.reuseCount * 0.05, 0.25);
   const retrievalBonus = item.lastRetrievedAt ? 0.05 : 0;
+  const confirmationBonus = item.lastConfirmedAt ? 0.04 : 0;
   const expiryPenalty = item.expiresAt && item.expiresAt.getTime() < now ? 0.5 : 0;
   const queryNorm = normalizeMemoryText(query);
   const contentNorm = normalizeMemoryText(item.content);
   const exactMatchBonus = contentNorm.includes(queryNorm) || queryNorm.includes(contentNorm) ? 0.2 : 0;
   const scopeBonus = expectedScope && item.scope === expectedScope ? 0.12 : 0;
-  const sourceBonus = item.sourceType === "user_explicit" ? 0.15 : item.sourceType === "assistant_inferred" ? 0.03 : 0;
-  const statusPenalty = item.status === "candidate" ? 0.2 : 0;
+  const sourceBonus = getSourceTrustBonus(item.sourceType);
+  const evidenceBonus = extractEvidenceScore(item.metadata);
+  const statusPenalty = getStatusPenalty(item.status);
 
-  return item.importance / 100 + item.confidence / 100 + reuseBonus + retrievalBonus + exactMatchBonus + scopeBonus + sourceBonus - freshnessPenalty - expiryPenalty - statusPenalty;
+  return item.importance / 100 + item.confidence / 100 + reuseBonus + retrievalBonus + confirmationBonus + exactMatchBonus + scopeBonus + sourceBonus + evidenceBonus - freshnessPenalty - expiryPenalty - statusPenalty;
 }
 
 async function touchMemoryItems(ids: string[]): Promise<void> {
@@ -874,6 +915,22 @@ export async function queryMemory(input: {
       score: mem.score,
       tags: mem.tags,
       sourceType: mem.sourceType,
+      evidenceCount: Array.isArray(mem.metadata?.evidence) ? mem.metadata.evidence.length : 0,
+      trustTier: "confirmed" as const,
+    }));
+
+  const workingMemory = explicitMemories
+    .filter((mem) => mem.status === "active" && mem.scope === "session")
+    .map((mem) => ({
+      content: mem.content,
+      timestamp: mem.timestamp,
+      kind: mem.kind,
+      scope: mem.scope,
+      score: mem.score,
+      tags: mem.tags,
+      sourceType: mem.sourceType,
+      evidenceCount: Array.isArray(mem.metadata?.evidence) ? mem.metadata.evidence.length : 0,
+      trustTier: "working" as const,
     }));
 
   const inferredMemories = explicitMemories
@@ -887,19 +944,30 @@ export async function queryMemory(input: {
       tags: mem.tags,
       sourceType: mem.sourceType,
       status: mem.status,
+      evidenceCount: Array.isArray(mem.metadata?.evidence) ? mem.metadata.evidence.length : 0,
+      trustTier: "inferred" as const,
     }));
+
+  const evidenceEpisodes = episodes.slice(0, Math.max(2, Math.ceil(input.limit / 3))).map((episode) => ({
+    content: episode.content,
+    timestamp: episode.timestamp,
+    role: episode.role,
+    trustTier: "evidence" as const,
+  }));
 
   const results = [
     ...confirmedFacts.map((mem) => ({ type: "memory_item", ...mem })),
-    ...episodes.map((episode) => ({ type: "episode", ...episode })),
-    ...graphNodes.slice(0, input.limit).map((node) => ({ ...node, type: "entity" as const })),
+    ...evidenceEpisodes.map((episode) => ({ type: "episode", ...episode })),
+    ...graphNodes.slice(0, input.limit).map((node) => ({ ...node, type: "entity" as const, trustTier: "graph" as const })),
   ].slice(0, input.limit);
 
   return {
     mode,
     results,
     explicitMemories: confirmedFacts,
+    workingMemory,
     inferredMemories,
+    evidenceEpisodes,
     entities: uniqueCandidates.map((entity) => ({ id: entity.id, name: entity.name, type: entity.type })),
     graph: { nodes: graphNodes, edges: graphEdges },
     communities,
