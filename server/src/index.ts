@@ -22,24 +22,29 @@ import { config } from "./config.js";
 
 const app = new Hono();
 
+function getAllowedOrigins(): string[] {
+  return config.KRAKEN_ALLOWED_ORIGINS
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const allowedOrigins = getAllowedOrigins();
+const allowAllOrigins = config.NODE_ENV !== "production" && allowedOrigins.length === 0;
+
 // --- Middleware ---
 app.use("*", logger());
 app.use(
   "*",
   cors({
     origin: (origin) => {
-      const allowed = config.KRAKEN_ALLOWED_ORIGINS
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      // If no origins configured, allow all (development mode)
-      if (allowed.length === 0) return origin;
-
       // Non-browser requests (no Origin header)
       if (!origin) return origin;
 
-      return allowed.includes(origin) ? origin : "";
+      // Development/test convenience only; production defaults closed.
+      if (allowAllOrigins) return origin;
+
+      return allowedOrigins.includes(origin) ? origin : "";
     },
   }),
 );
