@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Plus, Loader2, ChevronDown } from "lucide-react";
+import { Send, Plus, Loader2, ChevronDown, Check, X, MessageSquare } from "lucide-react";
 import { streamChat, api } from "@/lib/api";
 import { useSessions, useCreateSession } from "@/hooks/useSessions";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [timeline, setTimeline] = useState<Array<{ label: string; state: "running" | "done" | "error"; count: number; pending: number }>>([]);
   const [sessionKey, setSessionKey] = useState<string>("");
   const [model, setModel] = useState("kraken-omni-2.7");
   const [models, setModels] = useState<Array<{ id: string }>>([]);
@@ -22,9 +23,18 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const newSessionKeys = useRef(new Set<string>());
 
-  const { data: sessionsData } = useSessions(10);
+  const { data: sessionsData } = useSessions(50);
   const createSession = useCreateSession();
+
+  // Auto-resize textarea
+  const autoResize = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, []);
 
   // Load models on mount
   useEffect(() => {
@@ -33,10 +43,14 @@ export function ChatPage() {
       .catch(() => {});
   }, []);
 
-  // Load existing session messages
+  // Load existing session messages (skip for freshly created sessions)
   useEffect(() => {
     if (!sessionKey) return;
     localStorage.setItem("kraken_chat_session", sessionKey);
+    if (newSessionKeys.current.has(sessionKey)) {
+      newSessionKeys.current.delete(sessionKey);
+      return;
+    }
     api.get<{ messages: ChatMessage[] }>(`/v1/sessions/by-key/${sessionKey}`)
       .then((session) => {
         if (session?.messages) {
@@ -78,6 +92,7 @@ export function ChatPage() {
     let key = sessionKey;
     if (!key) {
       key = `web-${Date.now()}`;
+      newSessionKeys.current.add(key);
       setSessionKey(key);
     }
 
@@ -88,14 +103,54 @@ export function ChatPage() {
       ];
 
       for await (const chunk of streamChat(allMessages, model, key)) {
-        setMessages((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          if (last?.role === "assistant") {
-            copy[copy.length - 1] = { ...last, content: last.content + chunk };
+        if (chunk.type === "status") {
+          const status = chunk.status ?? "";
+          const label = chunk.detail ?? status;
+          if (status === "tool_call") {
+            setTimeline((prev) => {
+              const existing = prev.find((s) => s.label === label && s.state === "running");
+              if (existing) {
+                return prev.map((s) => s === existing ? { ...s, count: s.count + 1, pending: s.pending + 1 } : s);
+              }
+              return [
+                ...prev.map((s) => s.state === "running" ? { ...s, state: "done" as const } : s),
+                { label, state: "running" as const, count: 1, pending: 1 },
+              ];
+            });
+          } else if (status === "tool_result") {
+            setTimeline((prev) => prev.map((s) =>
+              s.state === "running" && s.label === label
+                ? { ...s, pending: s.pending - 1, state: s.pending <= 1 ? "done" as const : s.state }
+                : s
+            ));
+          } else if (status === "tool_error") {
+            setTimeline((prev) => prev.map((s) =>
+              s.state === "running" && s.label === label
+                ? { ...s, pending: s.pending - 1, state: s.pending <= 1 ? "error" as const : s.state }
+                : s
+            ));
+          } else {
+            // Pre-stream steps (searching_memory, compacting, generating)
+            setTimeline((prev) => [
+              ...prev.map((s) => s.state === "running" ? { ...s, state: "done" as const } : s),
+              { label, state: "running" as const, count: 1, pending: 1 },
+            ]);
           }
-          return copy;
-        });
+        } else if (chunk.type === "content" && chunk.content) {
+          // First content chunk: mark all running steps as done
+          setTimeline((prev) => {
+            const hasRunning = prev.some((s) => s.state === "running");
+            return hasRunning ? prev.map((s) => s.state === "running" ? { ...s, state: "done" as const } : s) : prev;
+          });
+          setMessages((prev) => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last?.role === "assistant") {
+              copy[copy.length - 1] = { ...last, content: last.content + chunk.content };
+            }
+            return copy;
+          });
+        }
       }
     } catch (err) {
       setMessages((prev) => {
@@ -108,11 +163,13 @@ export function ChatPage() {
       });
     } finally {
       setStreaming(false);
+      setTimeline([]);
     }
   };
 
   const handleNewChat = () => {
     const key = `web-${Date.now()}`;
+    newSessionKeys.current.add(key);
     setSessionKey(key);
     setMessages([]);
     createSession.mutate({ session_key: key, name: `Web Chat ${new Date().toLocaleDateString()}` });
@@ -126,30 +183,44 @@ export function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full">
+      {/* Chat sidebar */}
+      <div className="w-56 border-r bg-sidebar flex flex-col shrink-0">
+        <div className="p-2">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium border border-border hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New Chat
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto px-2 pb-2 space-y-0.5">
+          {sessionsData?.sessions.map((s) => {
+            const key = s.session_key || s.id;
+            const label = s.name || s.session_key || s.id.slice(0, 8);
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSessionKey(key)}
+                className={cn(
+                  "flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate",
+                  key === sessionKey
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50"
+                )}
+              >
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main chat area */}
+      <div className="flex flex-col flex-1 min-w-0">
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 h-14 border-b shrink-0">
-        <button
-          onClick={handleNewChat}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-3.5 h-3.5" /> New Chat
-        </button>
-
-        {/* Session selector */}
-        <select
-          value={sessionKey}
-          onChange={(e) => setSessionKey(e.target.value)}
-          className="px-2 py-1.5 rounded-lg border bg-background text-xs max-w-48"
-        >
-          <option value="">Select session...</option>
-          {sessionsData?.sessions.map((s) => (
-            <option key={s.id} value={s.session_key || s.id}>
-              {s.name || s.session_key || s.id.slice(0, 8)}
-            </option>
-          ))}
-        </select>
-
         {/* Model selector */}
         <select
           value={model}
@@ -189,15 +260,59 @@ export function ChatPage() {
             >
               <div
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
+                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm overflow-hidden",
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-foreground"
                 )}
               >
                 {msg.role === "assistant" ? (
-                  <div className="prose">
-                    <ReactMarkdown>{msg.content || (streaming ? "..." : "")}</ReactMarkdown>
+                  <div className="prose break-words overflow-hidden">
+                    {!msg.content && streaming && msg.id === messages[messages.length - 1]?.id ? (
+                      <div className="space-y-0">
+                        {timeline.length > 0 ? (
+                          <div className="flex flex-col">
+                            {timeline.map((step, i) => (
+                              <div key={i} className="flex items-start gap-2">
+                                {/* Vertical line + dot */}
+                                <div className="flex flex-col items-center">
+                                  {/* Dot */}
+                                  <div className={cn(
+                                    "w-4 h-4 rounded-full flex items-center justify-center shrink-0",
+                                    step.state === "running" ? "bg-primary/20" :
+                                    step.state === "error" ? "bg-destructive/20" :
+                                    "bg-emerald-500/20"
+                                  )}>
+                                    {step.state === "running" ? (
+                                      <Loader2 className="w-2.5 h-2.5 animate-spin text-primary" />
+                                    ) : step.state === "error" ? (
+                                      <X className="w-2.5 h-2.5 text-destructive" />
+                                    ) : (
+                                      <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                    )}
+                                  </div>
+                                  {/* Line to next */}
+                                  {i < timeline.length - 1 && <div className="w-px h-3 bg-border" />}
+                                </div>
+                                <span className={cn(
+                                  "text-xs pt-0.5",
+                                  step.state === "running" ? "text-foreground" :
+                                  step.state === "error" ? "text-destructive" :
+                                  "text-muted-foreground"
+                                )}>{step.label}{step.count > 1 && ` ×${step.count}`}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span className="text-xs italic">Thinking...</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    )}
                   </div>
                 ) : (
                   <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -221,16 +336,47 @@ export function ChatPage() {
 
       {/* Input area */}
       <div className="border-t p-4 shrink-0">
+        {streaming && timeline.length > 0 && messages[messages.length - 1]?.content && (
+          <div className="max-w-3xl mx-auto mb-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {timeline.map((step, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  {i > 0 && <div className="w-3 h-px bg-border" />}
+                  <div className={cn(
+                    "w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0",
+                    step.state === "running" ? "bg-primary/20" :
+                    step.state === "error" ? "bg-destructive/20" :
+                    "bg-emerald-500/20"
+                  )}>
+                    {step.state === "running" ? (
+                      <Loader2 className="w-2 h-2 animate-spin text-primary" />
+                    ) : step.state === "error" ? (
+                      <X className="w-2 h-2 text-destructive" />
+                    ) : (
+                      <Check className="w-2 h-2 text-emerald-500" />
+                    )}
+                  </div>
+                  <span className={cn(
+                    "text-[10px]",
+                    step.state === "running" ? "text-foreground" :
+                    step.state === "error" ? "text-destructive" :
+                    "text-muted-foreground"
+                  )}>{step.label}{step.count > 1 && ` ×${step.count}`}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="max-w-3xl mx-auto flex gap-2">
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); autoResize(); }}
             onKeyDown={handleKeyDown}
             placeholder="Message Kraken..."
             rows={1}
-            className="flex-1 resize-none px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring max-h-32"
-            style={{ minHeight: "42px" }}
+            className="flex-1 resize-none px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring overflow-y-auto"
+            style={{ minHeight: "42px", maxHeight: "160px" }}
           />
           <button
             onClick={handleSend}
@@ -243,6 +389,7 @@ export function ChatPage() {
             {streaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

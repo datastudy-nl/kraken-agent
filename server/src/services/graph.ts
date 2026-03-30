@@ -301,10 +301,16 @@ export async function getEntityNeighborhood(
       createdAt: n.properties.createdAt?.toString() ?? "",
     }));
 
+    // Map Neo4j internal node IDs to entity UUIDs so edges reference the right IDs
+    const neoIdToUuid = new Map<string, string>();
+    for (const n of rawNodes) {
+      neoIdToUuid.set(n.identity.toString(), n.properties.id);
+    }
+
     const edges: GraphRelationship[] = rawRels.map((r: any) => ({
       id: r.properties.id ?? "",
-      source: r.start?.toString() ?? "",
-      target: r.end?.toString() ?? "",
+      source: neoIdToUuid.get(r.start.toString()) ?? r.start?.toString() ?? "",
+      target: neoIdToUuid.get(r.end.toString()) ?? r.end?.toString() ?? "",
       type: r.properties.type ?? r.type,
       properties: JSON.parse(r.properties.properties ?? "{}"),
       createdAt: r.properties.createdAt?.toString() ?? "",

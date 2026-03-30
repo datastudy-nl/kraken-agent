@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Plus, Trash2, Tag, Code, Wrench, Network, Globe } from "lucide-react";
+import { Search, Plus, Trash2, Tag, Code, Wrench, Network, Globe, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useEntities, useCreateEntity, useDeleteEntity,
@@ -8,9 +8,11 @@ import {
   useCommunities,
   useMemoryQuery,
 } from "@/hooks/useMemory";
+import { NetworkNavigator } from "@/components/memory/NetworkNavigator";
 
 const tabs = [
   { id: "entities", label: "Entities", icon: Network },
+  { id: "graph", label: "Graph", icon: Share2 },
   { id: "skills", label: "Skills", icon: Code },
   { id: "tools", label: "Tools", icon: Wrench },
   { id: "communities", label: "Communities", icon: Globe },
@@ -44,6 +46,7 @@ export function MemoryPage() {
 
       <div className="flex-1 overflow-auto p-6">
         {tab === "entities" && <EntitiesTab />}
+        {tab === "graph" && <NetworkNavigator />}
         {tab === "skills" && <SkillsTab />}
         {tab === "tools" && <ToolsTab />}
         {tab === "communities" && <CommunitiesTab />}
@@ -290,8 +293,8 @@ function CommunitiesTab() {
               </div>
               <p className="text-sm text-muted-foreground">{c.summary}</p>
               <div className="flex flex-wrap gap-1 mt-2">
-                {c.entityNames.map((name) => (
-                  <span key={name} className="px-1.5 py-0.5 rounded bg-muted text-[11px]">{name}</span>
+                {c.entity_ids.map((id) => (
+                  <span key={id} className="px-1.5 py-0.5 rounded bg-muted text-[11px]">{id}</span>
                 ))}
               </div>
             </div>

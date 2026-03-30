@@ -1606,7 +1606,7 @@ export function getBuiltinTools(sessionId: string) {
       }),
       execute: async ({ name }) => {
         try {
-          const value = await getSecretValue(name);
+          const value = await getSecretValue(name, "get_secret");
           return { status: "ok", name, value };
         } catch (err: any) {
           return { status: "error", name, message: err.message };

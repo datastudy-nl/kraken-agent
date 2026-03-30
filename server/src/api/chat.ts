@@ -225,44 +225,18 @@ chatRouter.post(
     const lastUserMessage =
       [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
-    // Store the user message so it becomes part of episodic memory
-    // (searchable across sessions via FTS/vector). OpenAI-compatible clients
-    // re-send the full history each request, so we only persist the latest
-    // user message to avoid duplicates.
-    if (lastUserMessage) {
-      await storeMessage({
-        sessionId,
-        role: "user",
-        content: lastUserMessage,
+    // Helper to send a status SSE event (only used in streaming path)
+    const sendStatus = async (stream: { write: (s: string) => Promise<unknown> }, status: string, detail?: string) => {
+      const sseData = JSON.stringify({
+        id: completionId,
+        object: "chat.completion.chunk",
+        created,
+        model: modelName,
+        choices: [{ index: 0, delta: {}, finish_reason: null }],
+        kraken_status: { status, detail },
       });
-    }
-
-    const krakenSystem = await buildSystemPrompt({
-      message: lastUserMessage,
-      sessionHistory: conversationMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    });
-
-    // Merge client system prompt with Kraken system prompt
-    const fullSystem = systemContent
-      ? `${krakenSystem}\n\n---\nAdditional instructions from client:\n${systemContent}`
-      : krakenSystem;
-
-    // Context compaction for completions endpoint
-    const systemTokenEstimate = Math.ceil(fullSystem.length / 4);
-    let compactedMessages = conversationMessages as Array<{ role: string; content: string }>;
-    if (shouldCompact(compactedMessages, systemTokenEstimate)) {
-      await preCompactionFlush(sessionId, compactedMessages);
-      compactedMessages = await compactHistory(sessionId, compactedMessages);
-    }
-    const finalMessages = compactedMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
-
-    const tools = getBuiltinTools(sessionId);
+      await stream.write(`data: ${sseData}\n\n`);
+    };
 
     // --- Streaming path ---
     if (body.stream) {
@@ -271,12 +245,45 @@ chatRouter.post(
         c.header("Cache-Control", "no-cache");
         c.header("Connection", "keep-alive");
 
+        // Store user message
+        if (lastUserMessage) {
+          await storeMessage({ sessionId, role: "user", content: lastUserMessage });
+        }
+
+        // Pre-stream pipeline with status events
+        await sendStatus(stream, "searching_memory", "Searching memory...");
+        const krakenSystem = await buildSystemPrompt({
+          message: lastUserMessage,
+          sessionHistory: conversationMessages.map((m) => ({ role: m.role, content: m.content })),
+        });
+
+        const fullSystem = systemContent
+          ? `${krakenSystem}\n\n---\nAdditional instructions from client:\n${systemContent}`
+          : krakenSystem;
+
+        // Context compaction
+        const systemTokenEstimate = Math.ceil(fullSystem.length / 4);
+        let compactedMessages = conversationMessages as Array<{ role: string; content: string }>;
+        if (shouldCompact(compactedMessages, systemTokenEstimate)) {
+          await sendStatus(stream, "compacting", "Compacting context...");
+          await preCompactionFlush(sessionId, compactedMessages);
+          compactedMessages = await compactHistory(sessionId, compactedMessages);
+        }
+        const finalMessages = compactedMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+
+        const tools = getBuiltinTools(sessionId);
+
+        await sendStatus(stream, "generating", "Generating response...");
+
         const result = aiStreamText({
           model: resolveModel(modelName),
           system: fullSystem,
           messages: finalMessages,
           tools,
-          maxSteps: tools ? 16 : undefined,
+          maxSteps: tools ? 64 : undefined,
           temperature: body.temperature,
           topP: body.top_p,
           maxTokens: body.max_tokens,
@@ -284,22 +291,37 @@ chatRouter.post(
 
         let collectedText = "";
 
-        for await (const chunk of result.textStream) {
-          collectedText += chunk;
-          const sseData = JSON.stringify({
-            id: completionId,
-            object: "chat.completion.chunk",
-            created,
-            model: modelName,
-            choices: [
-              {
-                index: 0,
-                delta: { content: chunk },
-                finish_reason: null,
-              },
-            ],
-          });
-          await stream.write(`data: ${sseData}\n\n`);
+        try {
+          for await (const part of result.fullStream) {
+            if (part.type === "tool-call") {
+              await sendStatus(stream, "tool_call", part.toolName);
+            } else if (part.type === "tool-result") {
+              const hasError = part.result != null && typeof part.result === "object" && "error" in (part.result as Record<string, unknown>);
+              await sendStatus(stream, hasError ? "tool_error" : "tool_result", part.toolName);
+            } else if (part.type === "error") {
+              console.error("[stream] error part:", part.error);
+              await sendStatus(stream, "tool_error", String(part.error));
+            } else if (part.type === "text-delta") {
+              collectedText += part.textDelta;
+              const sseData = JSON.stringify({
+                id: completionId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelName,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: part.textDelta },
+                    finish_reason: null,
+                  },
+                ],
+              });
+              await stream.write(`data: ${sseData}\n\n`);
+            }
+          }
+        } catch (err) {
+          console.error("[stream] fullStream error:", err);
+          await sendStatus(stream, "tool_error", "Stream error — response may be incomplete");
         }
 
         // Final chunk
@@ -341,6 +363,44 @@ chatRouter.post(
         }
       });
     }
+
+    // --- Non-streaming pre-work ---
+
+    // Store the user message so it becomes part of episodic memory
+    if (lastUserMessage) {
+      await storeMessage({
+        sessionId,
+        role: "user",
+        content: lastUserMessage,
+      });
+    }
+
+    const krakenSystem = await buildSystemPrompt({
+      message: lastUserMessage,
+      sessionHistory: conversationMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    });
+
+    // Merge client system prompt with Kraken system prompt
+    const fullSystem = systemContent
+      ? `${krakenSystem}\n\n---\nAdditional instructions from client:\n${systemContent}`
+      : krakenSystem;
+
+    // Context compaction for completions endpoint
+    const systemTokenEstimate = Math.ceil(fullSystem.length / 4);
+    let compactedMessages = conversationMessages as Array<{ role: string; content: string }>;
+    if (shouldCompact(compactedMessages, systemTokenEstimate)) {
+      await preCompactionFlush(sessionId, compactedMessages);
+      compactedMessages = await compactHistory(sessionId, compactedMessages);
+    }
+    const finalMessages = compactedMessages.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+
+    const tools = getBuiltinTools(sessionId);
 
     // --- Non-streaming path ---
     const result = await runChat({
