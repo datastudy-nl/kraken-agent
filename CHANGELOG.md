@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-platform identity linking
 - Python SDK (`pip install kraken-agent`)
 - Docker Compose deployment (PostgreSQL + pgvector, Neo4j 5, Redis 7, Browserless)
-- Documentation site (MkDocs Material) at kraken-agent.com
+- Documentation site (Eleventy) at kraken-agent.com
 
 [Unreleased]: https://github.com/kraken-agent/kraken-agent/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/kraken-agent/kraken-agent/releases/tag/v0.1.0

@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Configuration
+description: All environment variables and tuning options
+---
+
 # Configuration
 
 Kraken is configured through environment variables. Set them in your `.env` file or pass them directly to Docker.
@@ -16,8 +22,10 @@ These must be set for Kraken to start.
 | `NEO4J_PASSWORD` | Neo4j password. |
 | `OPENAI_API_KEY` | OpenAI API key. Required unless using Anthropic. |
 
-!!! tip "Provider flexibility"
-    Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or both. Kraken resolves the correct provider from the model name.
+<div class="callout callout-tip">
+<p class="callout-title">Provider flexibility</p>
+<p>Set <code>OPENAI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, or both. Kraken resolves the correct provider from the model name.</p>
+</div>
 
 ---
 
@@ -44,8 +52,10 @@ Control how Kraken manages its context window and memory retrieval.
 | `KRAKEN_COMPACTION_KEEP_RECENT` | `10` | Messages preserved after compaction |
 | `KRAKEN_PRE_FLUSH_ENABLED` | `true` | Silently persist important context to memory before compaction |
 
-!!! info "How context compaction works"
-    When a conversation approaches the token limit, Kraken first performs a "pre-flush" — it silently analyzes the conversation for important facts and persists them to the knowledge graph. Then it summarizes older messages into a compact summary, keeping the most recent messages intact. Nothing is lost; it's compressed into the graph.
+<div class="callout callout-info">
+<p class="callout-title">How context compaction works</p>
+<p>When a conversation approaches the token limit, Kraken first performs a "pre-flush" — it silently analyzes the conversation for important facts and persists them to the knowledge graph. Then it summarizes older messages into a compact summary, keeping the most recent messages intact. Nothing is lost; it's compressed into the graph.</p>
+</div>
 
 ---
 
@@ -93,8 +103,10 @@ Control how Kraken manages its context window and memory retrieval.
 | `KRAKEN_SANDBOX_TIMEOUT_MS` | `30000` | Execution timeout |
 | `KRAKEN_WORKSPACES_PATH` | `/app/workspaces` | Host path for sandbox workspace mounts |
 
-!!! warning "Docker socket access"
-    The sandbox feature requires the Docker socket to be mounted. This is configured in `docker-compose.yml` by default. Only enable this in trusted environments.
+<div class="callout callout-warning">
+<p class="callout-title">Docker socket access</p>
+<p>The sandbox feature requires the Docker socket to be mounted. This is configured in <code>docker-compose.yml</code> by default. Only enable this in trusted environments.</p>
+</div>
 
 ---
 
@@ -104,8 +116,10 @@ Control how Kraken manages its context window and memory retrieval.
 |----------|---------|-------------|
 | `KRAKEN_GIT_TOKEN` | *(none)* | GitHub personal access token. Enables private repo cloning, git push, and PR creation. Requires `repo` scope for full functionality. |
 
-!!! tip "Token permissions"
-    For the full PR workflow (clone → edit → push → create PR), the token needs the `repo` scope. For read-only access to public repos, no token is needed.
+<div class="callout callout-tip">
+<p class="callout-title">Token permissions</p>
+<p>For the full PR workflow (clone → edit → push → create PR), the token needs the <code>repo</code> scope. For read-only access to public repos, no token is needed.</p>
+</div>
 
 ---
 

@@ -5,7 +5,8 @@ on:
     branches: [main]
     paths:
       - "docs/**"
-      - "mkdocs.yml"
+      - "eleventy.config.js"
+      - "package.json"
   workflow_dispatch:
 
 permissions:
@@ -25,20 +26,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: "20"
 
       - name: Install dependencies
-        run: pip install mkdocs-material mkdocs-exclude
+        run: npm ci
 
       - name: Build docs
-        run: mkdocs build --strict
+        run: npm run docs:build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
 
   deploy:
     needs: build

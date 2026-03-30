@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Memory System
+description: GraphRAG knowledge graph, query modes, and context compaction
+---
+
 # Memory System
 
 Kraken's memory is what separates it from every other agent. While most systems treat memory as a flat list of facts crammed into the context window, Kraken builds a **structured knowledge graph** that it queries intelligently based on what you're actually asking.

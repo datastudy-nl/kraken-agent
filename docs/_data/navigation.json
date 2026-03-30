@@ -1,0 +1,42 @@
+{
+  "sections": [
+    {
+      "title": "Getting Started",
+      "path": "/getting-started/",
+      "items": [
+        { "title": "Quick Start", "url": "/getting-started/quickstart/" },
+        { "title": "Configuration", "url": "/getting-started/configuration/" }
+      ]
+    },
+    {
+      "title": "Concepts",
+      "path": "/concepts/",
+      "items": [
+        { "title": "Architecture", "url": "/concepts/architecture/" },
+        { "title": "Memory System", "url": "/concepts/memory/" },
+        { "title": "Identity System", "url": "/concepts/identity/" },
+        { "title": "Skills & Self-Improvement", "url": "/concepts/skills/" },
+        { "title": "Sessions & Routing", "url": "/concepts/sessions/" }
+      ]
+    },
+    {
+      "title": "User Guide",
+      "path": "/guide/",
+      "items": [
+        { "title": "Python SDK", "url": "/guide/python-sdk/" },
+        { "title": "API Reference", "url": "/guide/api-reference/" },
+        { "title": "Discord Bot", "url": "/guide/discord-bot/" },
+        { "title": "Scheduled Tasks", "url": "/guide/scheduled-tasks/" },
+        { "title": "Browser Automation", "url": "/guide/browser-automation/" }
+      ]
+    },
+    {
+      "title": "Developer Guide",
+      "path": "/developer/",
+      "items": [
+        { "title": "Contributing", "url": "/developer/contributing/" },
+        { "title": "Project Structure", "url": "/developer/project-structure/" }
+      ]
+    }
+  ]
+}

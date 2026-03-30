@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Architecture
+description: System overview, components, and data flow
+---
+
 # Architecture
 
 Kraken is a self-contained stack that runs via Docker Compose. No external services, no third-party memory providers, no vendor lock-in. Every component runs on your infrastructure.

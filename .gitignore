@@ -31,4 +31,5 @@ Thumbs.db
 
 # Build artifacts
 site/
+_site/
 *.tgz

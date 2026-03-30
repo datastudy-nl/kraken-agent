@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Python SDK
+description: Type-safe Python client for chat, memory, skills, and identity
+---
+
 # Python SDK
 
 The official Python SDK for Kraken Agent. Type-safe, async-ready, and designed for production use.

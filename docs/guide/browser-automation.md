@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Browser Automation
+description: Headless Chromium for web research, data extraction, and screenshots
+---
+
 # Browser Automation
 
 Kraken includes a headless Chromium browser accessible to the agent as a built-in tool. This enables web research, data extraction, form filling, and screenshot capture — all from within a conversation.
@@ -75,11 +81,14 @@ Kraken blocks requests to internal/private IP ranges by default. The browser can
 
 This prevents the agent from being used to probe internal services.
 
-!!! warning "Additional blocked hosts"
-    You can block additional domains via `KRAKEN_BROWSER_BLOCKED_HOSTS`:
-    ```bash
-    KRAKEN_BROWSER_BLOCKED_HOSTS=internal.company.com,admin.local
-    ```
+<div class="callout callout-warning">
+<p class="callout-title">Additional blocked hosts</p>
+<p>You can block additional domains via <code>KRAKEN_BROWSER_BLOCKED_HOSTS</code>:</p>
+
+```bash
+KRAKEN_BROWSER_BLOCKED_HOSTS=internal.company.com,admin.local
+```
+</div>
 
 ---
 

@@ -1,56 +1,71 @@
+---
+layout: layouts/docs.njk
+title: Scheduled Tasks
+description: Cron-based task scheduling with full agent capabilities
+---
+
 # Scheduled Tasks
 
 Kraken can run tasks on a cron schedule — no external scheduler needed. Scheduled tasks execute as new conversations, with full access to the knowledge graph, skills, and tools.
 
 ## Creating a Schedule
 
-=== "Python SDK"
+<div class="tabs">
+<div class="tab-buttons">
+<button class="tab-button active" data-tab="create-python">Python SDK</button>
+<button class="tab-button" data-tab="create-rest">REST API</button>
+</div>
+<div class="tab-content active" id="create-python">
 
-    ```python
-    from kraken import KrakenClient
+```python
+from kraken import KrakenClient
 
-    client = KrakenClient(api_url="http://localhost:8080")
+client = KrakenClient(api_url="http://localhost:8080")
 
-    client.sessions.create(session_key="schedules")  # optional: context session
+client.sessions.create(session_key="schedules")  # optional: context session
 
-    schedule = client.chat(
-        "Create a schedule called 'daily-standup' that runs every weekday at 9am. "
-        "It should summarize what I worked on yesterday.",
-        session_key="schedules",
-    )
-    ```
+schedule = client.chat(
+    "Create a schedule called 'daily-standup' that runs every weekday at 9am. "
+    "It should summarize what I worked on yesterday.",
+    session_key="schedules",
+)
+```
 
-    Or use the schedules API directly:
+Or use the schedules API directly:
 
-    ```python
-    # Direct API — no chat needed
-    import httpx
+```python
+# Direct API — no chat needed
+import httpx
 
-    httpx.post(
-        "http://localhost:8080/v1/schedules",
-        headers={"Authorization": "Bearer sk-..."},
-        json={
-            "name": "daily-standup",
-            "cron_expression": "0 9 * * 1-5",
-            "task_prompt": "Summarize what I worked on yesterday and list priorities for today.",
-            "metadata": {"channel": "slack-standup"},
-        },
-    )
-    ```
-
-=== "REST API"
-
-    ```bash
-    curl -X POST http://localhost:8080/v1/schedules \
-      -H "Authorization: Bearer $KRAKEN_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{
+httpx.post(
+    "http://localhost:8080/v1/schedules",
+    headers={"Authorization": "Bearer sk-..."},
+    json={
         "name": "daily-standup",
         "cron_expression": "0 9 * * 1-5",
         "task_prompt": "Summarize what I worked on yesterday and list priorities for today.",
-        "max_runs": 260
-      }'
-    ```
+        "metadata": {"channel": "slack-standup"},
+    },
+)
+```
+
+</div>
+<div class="tab-content" id="create-rest">
+
+```bash
+curl -X POST http://localhost:8080/v1/schedules \
+  -H "Authorization: Bearer $KRAKEN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "daily-standup",
+    "cron_expression": "0 9 * * 1-5",
+    "task_prompt": "Summarize what I worked on yesterday and list priorities for today.",
+    "max_runs": 260
+  }'
+```
+
+</div>
+</div>
 
 ---
 

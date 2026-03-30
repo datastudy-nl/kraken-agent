@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Contributing
+description: Development setup, conventions, and PR process
+---
+
 # Contributing
 
 Kraken Agent is open source and welcomes contributions. This guide covers the development setup, project conventions, and PR process.
@@ -106,7 +112,7 @@ git checkout -b feat/my-feature
 
 - **Server changes:** Edit files in `server/src/`, the dev server hot-reloads
 - **SDK changes:** Edit files in `sdk/python/kraken/`, reinstall with `pip install -e .` if needed
-- **Docs changes:** Edit files in `docs/`, preview with `mkdocs serve`
+- **Docs changes:** Edit files in `docs/`, preview with `npm run docs:dev`
 
 ### 3. Test
 
@@ -120,7 +126,7 @@ cd sdk/python
 pytest
 
 # Docs
-mkdocs serve   # Preview at http://localhost:8000
+npm run docs:dev   # Preview at http://localhost:8080
 ```
 
 ### 4. Submit a PR
@@ -142,11 +148,11 @@ Then open a pull request on GitHub. Include:
 ### Previewing docs locally
 
 ```bash
-pip install mkdocs-material mkdocs-exclude
-mkdocs serve
+npm install
+npm run docs:dev
 ```
 
-Opens at `http://localhost:8000` with hot reload.
+Opens at `http://localhost:8080` with hot reload.
 
 ### Database changes
 

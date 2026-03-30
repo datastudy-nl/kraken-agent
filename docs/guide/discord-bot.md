@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Discord Bot
+description: Build a Discord bot with persistent memory and self-improving skills
+---
+
 # Discord Bot
 
 This guide walks through building a Discord bot powered by Kraken Agent. Each Discord user gets their own persistent session with full memory, identity, and self-improving skills.

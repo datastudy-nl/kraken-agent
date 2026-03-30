@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: API Reference
+description: Complete REST API endpoint documentation
+---
+
 # API Reference
 
 All endpoints are served under `http://localhost:8080` (default). Authenticated requests require the `Authorization: Bearer <API_KEY>` header.

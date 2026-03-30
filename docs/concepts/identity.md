@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Identity System
+description: SOUL.md personality, user model, and cross-platform identity linking
+---
+
 # Identity System
 
 Kraken doesn't just know what you've said — it knows *who you are*. The identity system gives the agent a consistent personality and builds a deepening model of every user it interacts with.
@@ -26,33 +32,42 @@ You are Kraken, a technical AI assistant that values precision and clarity.
 
 ### Managing SOUL.md
 
-=== "Python SDK"
+<div class="tabs">
+<div class="tab-buttons">
+<button class="tab-button active" data-tab="soul-python">Python SDK</button>
+<button class="tab-button" data-tab="soul-rest">REST API</button>
+</div>
+<div class="tab-content active" id="soul-python">
 
-    ```python
-    # Read current personality
-    soul = client.identity.get_soul()
-    print(soul.content)
+```python
+# Read current personality
+soul = client.identity.get_soul()
+print(soul.content)
 
-    # Update personality
-    client.identity.set_soul("""
-    You are Kraken, a concise and technical assistant.
-    You prefer direct, actionable answers over lengthy explanations.
-    """)
-    ```
+# Update personality
+client.identity.set_soul("""
+You are Kraken, a concise and technical assistant.
+You prefer direct, actionable answers over lengthy explanations.
+""")
+```
 
-=== "REST API"
+</div>
+<div class="tab-content" id="soul-rest">
 
-    ```bash
-    # Read
-    curl http://localhost:8080/v1/identity/soul \
-      -H "Authorization: Bearer $KRAKEN_API_KEY"
+```bash
+# Read
+curl http://localhost:8080/v1/identity/soul \
+  -H "Authorization: Bearer $KRAKEN_API_KEY"
 
-    # Update
-    curl -X PUT http://localhost:8080/v1/identity/soul \
-      -H "Authorization: Bearer $KRAKEN_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{"content": "You are Kraken, a concise and technical assistant."}'
-    ```
+# Update
+curl -X PUT http://localhost:8080/v1/identity/soul \
+  -H "Authorization: Bearer $KRAKEN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "You are Kraken, a concise and technical assistant."}'
+```
+
+</div>
+</div>
 
 SOUL.md is limited to 6,000 characters (`KRAKEN_MAX_SOUL_CHARS`). This is intentional — the personality should be focused. Let the knowledge graph handle factual context.
 

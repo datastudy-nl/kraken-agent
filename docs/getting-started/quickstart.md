@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Quick Start
+description: Get Kraken running in under 5 minutes with Docker Compose
+---
+
 # Quick Start
 
 Get Kraken running in under 5 minutes with Docker Compose.

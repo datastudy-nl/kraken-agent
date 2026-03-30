@@ -1,0 +1,100 @@
+/* ============================================
+   Kraken Agent — Design Tokens
+   Inspired by Anthropic/OpenAI docs
+   ============================================ */
+
+:root,
+[data-theme="light"] {
+  /* Surface */
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f9fafb;
+  --color-bg-tertiary: #f3f4f6;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f9fafb;
+
+  /* Text */
+  --color-text: #111827;
+  --color-text-secondary: #4b5563;
+  --color-text-tertiary: #9ca3af;
+  --color-text-inverse: #ffffff;
+
+  /* Borders */
+  --color-border: #e5e7eb;
+  --color-border-light: #f3f4f6;
+  --color-border-strong: #d1d5db;
+
+  /* Accent — Kraken Cyan */
+  --color-accent: #0891b2;
+  --color-accent-hover: #0e7490;
+  --color-accent-light: #ecfeff;
+  --color-accent-subtle: #cffafe;
+
+  /* Semantic */
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-info: #0891b2;
+
+  /* Code */
+  --color-code-bg: #0d1117;
+  --color-code-text: #e6edf3;
+  --color-code-inline-bg: #f3f4f6;
+  --color-code-inline-text: #111827;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+
+  /* Layout */
+  --navbar-height: 56px;
+  --sidebar-width: 260px;
+  --content-max-width: 768px;
+  --toc-width: 220px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+}
+
+[data-theme="dark"] {
+  /* Surface */
+  --color-bg: #0a0a0a;
+  --color-bg-secondary: #111111;
+  --color-bg-tertiary: #1a1a1a;
+  --color-surface: #141414;
+  --color-surface-hover: #1a1a1a;
+
+  /* Text */
+  --color-text: #e5e5e5;
+  --color-text-secondary: #a3a3a3;
+  --color-text-tertiary: #737373;
+  --color-text-inverse: #0a0a0a;
+
+  /* Borders */
+  --color-border: #262626;
+  --color-border-light: #1a1a1a;
+  --color-border-strong: #404040;
+
+  /* Accent */
+  --color-accent: #22d3ee;
+  --color-accent-hover: #67e8f9;
+  --color-accent-light: #0c1a1e;
+  --color-accent-subtle: #112025;
+
+  /* Code */
+  --color-code-bg: #0d1117;
+  --color-code-text: #e6edf3;
+  --color-code-inline-bg: #1e1e1e;
+  --color-code-inline-text: #e5e5e5;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}

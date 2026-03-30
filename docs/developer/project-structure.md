@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Project Structure
+description: Complete guide to the Kraken Agent codebase
+---
+
 # Project Structure
 
 A complete guide to the Kraken Agent codebase.
@@ -5,7 +11,7 @@ A complete guide to the Kraken Agent codebase.
 ```
 kraken-agent/
 ├── docker-compose.yml          # Full stack: API, worker, Postgres, Neo4j, Redis, Chromium
-├── mkdocs.yml                  # Documentation site configuration
+├── eleventy.config.js           # Documentation site configuration
 ├── README.md                   # Project README
 │
 ├── server/                     # TypeScript API + background worker
@@ -76,7 +82,7 @@ kraken-agent/
 │           ├── exceptions.py   # Typed exceptions (KrakenError, NotFoundError, etc.)
 │           └── py.typed        # PEP 561 marker
 │
-└── docs/                       # Documentation source (MkDocs Material)
+└── docs/                       # Documentation source (Eleventy)
     ├── index.md                # Landing page
     ├── CNAME                   # Custom domain (kraken-agent.com)
     ├── stylesheets/

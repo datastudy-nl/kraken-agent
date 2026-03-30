@@ -1,0 +1,16 @@
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-inner">
+    {% for section in navigation.sections %}
+    <div class="sidebar-section">
+      <p class="sidebar-heading">{{ section.title }}</p>
+      <ul class="sidebar-list">
+        {% for item in section.items %}
+        <li class="sidebar-item{% if page.url === item.url %} sidebar-item--active{% endif %}">
+          <a href="{{ item.url }}">{{ item.title }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</aside>

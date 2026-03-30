@@ -57,7 +57,7 @@ pip install -e ".[dev]"
 ```
 server/         → TypeScript API + background worker
 sdk/python/     → Python SDK (pip install kraken-agent)
-docs/           → Documentation site (MkDocs Material)
+docs/           → Documentation site (Eleventy)
 ```
 
 ## Code Style

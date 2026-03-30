@@ -1,3 +1,9 @@
+---
+layout: layouts/docs.njk
+title: Sessions & Routing
+description: Session keys, personality overlays, and context compaction
+---
+
 # Sessions & Routing
 
 Sessions are Kraken's unit of conversation. Every message belongs to a session, and sessions persist across API calls. This is how Kraken maintains context — not just within a single request, but across hours, days, or weeks of interaction.
