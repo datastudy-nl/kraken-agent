@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List  # noqa: UP035
 
 from kraken._transport import AsyncTransport
 from kraken.models import Skill
@@ -28,7 +28,7 @@ class AsyncSkills:
         name: str,
         content: str,
         *,
-        tags: list[str] | None = None,
+        tags: List[str] | None = None,  # noqa: UP006
     ) -> Skill:
         payload: dict[str, Any] = {"name": name, "content": content}
         if tags:
@@ -45,7 +45,7 @@ class AsyncSkills:
         skill_id: str,
         *,
         content: str | None = None,
-        tags: list[str] | None = None,
+        tags: List[str] | None = None,  # noqa: UP006
     ) -> Skill:
         payload: dict[str, Any] = {}
         if content is not None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List  # noqa: UP035
 
 from kraken._transport import AsyncTransport
 from kraken.models import Message, Session, SessionDetail
@@ -46,7 +46,7 @@ class AsyncSessions:
 
     async def messages(
         self, session_id: str, *, limit: int = 100, offset: int = 0
-    ) -> list[Message]:
+    ) -> List[Message]:  # noqa: UP006
         data = await self._t.get(
             f"/v1/sessions/{session_id}/messages",
             params={"limit": limit, "offset": offset},
