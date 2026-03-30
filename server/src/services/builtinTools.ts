@@ -22,6 +22,7 @@ import {
   listProcesses,
   killProcess,
   getSandboxInfo,
+  updateSandboxResources,
 } from "./sandbox.js";
 import {
   navigateTo,
@@ -666,6 +667,51 @@ export function getBuiltinTools(sessionId: string) {
               image: info.image,
               forwarded_ports: info.ports,
             },
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    request_resource_increase: tool({
+      description:
+        "Request an increase to the sandbox container's memory limit. Use this when a process was killed (exit code 137 / OOM) " +
+        "or when you anticipate needing more memory for a task (e.g. large builds, data processing). " +
+        "The increase is applied live to the running container — no restart needed. " +
+        "Maximum allowed is configured server-side (default 2048 MB).",
+      parameters: z.object({
+        memory_mb: z.coerce
+          .number()
+          .describe("Requested memory limit in MB (e.g. 512, 1024, 2048)"),
+        reason: z
+          .string()
+          .describe("Why the increase is needed (e.g. 'OOM killed during npm install', 'need to process large dataset')"),
+      }),
+      execute: async ({ memory_mb, reason }) => {
+        try {
+          const max = config.KRAKEN_SANDBOX_MAX_MEMORY_MB;
+          const requested = Math.min(memory_mb, max);
+          if (requested < 64) {
+            return { status: "error", message: "Minimum memory is 64 MB" };
+          }
+          const current = await getSandboxInfo(sessionId);
+          if (!current) {
+            return { status: "error", message: "No sandbox is running for this session" };
+          }
+          console.log(
+            `[sandbox] Resource increase requested for ${sessionId}: ${current.memoryLimitMB}MB → ${requested}MB (reason: ${reason})`,
+          );
+          const result = await updateSandboxResources(sessionId, requested);
+          return {
+            status: "ok",
+            previous_memory_mb: current.memoryLimitMB,
+            new_memory_mb: result.memoryMB,
+            max_allowed_mb: max,
+            capped: memory_mb > max,
+            message: memory_mb > max
+              ? `Requested ${memory_mb}MB but capped at server maximum of ${max}MB`
+              : `Memory increased from ${current.memoryLimitMB}MB to ${result.memoryMB}MB`,
           };
         } catch (err: any) {
           return { status: "error", message: err.message };

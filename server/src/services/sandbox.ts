@@ -663,3 +663,27 @@ export async function getSandboxInfo(sessionId: string): Promise<SandboxInfo | n
     return null;
   }
 }
+
+/**
+ * Update resource limits on a running sandbox container.
+ * Uses Docker's container update API for live changes.
+ */
+export async function updateSandboxResources(
+  sessionId: string,
+  memoryMB: number,
+): Promise<{ memoryMB: number }> {
+  const name = containerName(sessionId);
+  const container = docker.getContainer(name);
+  const info = await container.inspect();
+  if (!info.State.Running) {
+    throw new Error("Sandbox is not running");
+  }
+
+  const memoryBytes = memoryMB * 1024 * 1024;
+  await container.update({
+    Memory: memoryBytes,
+    MemorySwap: memoryBytes,
+  });
+
+  return { memoryMB };
+}
