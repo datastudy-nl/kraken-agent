@@ -164,3 +164,24 @@ class Schedule(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+# --- Files / Workspace ---
+class FileEntry(BaseModel):
+    name: str
+    type: str  # "file" or "directory"
+    size: int
+
+
+class FileContent(BaseModel):
+    session_id: str
+    path: str
+    content: str
+    encoding: str | None = None
+    size: int
+
+
+class FileWriteResult(BaseModel):
+    session_id: str
+    path: str
+    size: int

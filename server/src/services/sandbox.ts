@@ -274,6 +274,27 @@ export async function writeFileInSandbox(
 }
 
 /**
+ * Write a binary file to the sandbox workspace from a Buffer.
+ */
+export async function writeBinaryInSandbox(
+  sessionId: string,
+  filePath: string,
+  data: Buffer,
+): Promise<void> {
+  const normalized = path.normalize(filePath).replace(/^(\.\.[/\\])+/, "");
+  if (path.isAbsolute(normalized)) {
+    throw new Error("Absolute paths not allowed");
+  }
+  const base = path.resolve(workspacePath(sessionId));
+  const fullPath = path.resolve(base, normalized);
+  if (fullPath !== base && !fullPath.startsWith(base + path.sep)) {
+    throw new Error("Path traversal detected");
+  }
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, data);
+}
+
+/**
  * Read a file from the sandbox workspace.
  */
 export async function readFileFromSandbox(

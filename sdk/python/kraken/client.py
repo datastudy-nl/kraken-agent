@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from kraken._transport import Transport
+from kraken.files import Files
 from kraken.identity import Identity
 from kraken.memory import Memory
 from kraken.models import ChatResponse, HealthStatus
@@ -63,6 +64,7 @@ class KrakenClient:
         self.tools = Tools(self._transport)
         self.identity = Identity(self._transport)
         self.schedules = Schedules(self._transport)
+        self.files = Files(self._transport)
 
     # --- Chat (top-level convenience) ---
 
