@@ -15,14 +15,14 @@ fail() {
 expect_json_field() {
   local json="$1"
   local expr="$2"
-  echo "$json" | python3 - "$expr" <<'PY'
+  echo "$json" | python3 -c '
 import json, sys
 expr = sys.argv[1]
 data = json.load(sys.stdin)
 value = eval(expr, {"__builtins__": {}}, {"data": data, "isinstance": isinstance, "list": list, "len": len})
 if not value:
     raise SystemExit(1)
-PY
+' "$expr"
 }
 
 request() {
@@ -73,7 +73,7 @@ wait_for_session_message() {
   for _ in $(seq 1 90); do
     local response
     response=$(request GET "/v1/sessions/${session_id}/messages?limit=50&offset=0")
-    if echo "$response" | python3 - "$needle" <<'PY'
+    if echo "$response" | python3 -c '
 import json, sys
 needle = sys.argv[1]
 data = json.load(sys.stdin)
@@ -81,7 +81,7 @@ for msg in data.get("messages", []):
     if needle in (msg.get("content") or ""):
         raise SystemExit(0)
 raise SystemExit(1)
-PY
+' "$needle"
     then
       echo "$response"
       return 0
@@ -98,7 +98,7 @@ wait_for_memory_entity() {
     local encoded response
     encoded=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$name")
     response=$(request GET "/v1/memory/entities?search=${encoded}&limit=20")
-    if echo "$response" | python3 - "$name" <<'PY'
+    if echo "$response" | python3 -c '
 import json, sys
 name = sys.argv[1].lower()
 data = json.load(sys.stdin)
@@ -106,7 +106,7 @@ for entity in data.get("entities", []):
     if (entity.get("name") or "").lower() == name:
         raise SystemExit(0)
 raise SystemExit(1)
-PY
+' "$name"
     then
       echo "$response"
       return 0
@@ -124,7 +124,7 @@ wait_for_memory_query_hit() {
     local payload response
     payload=$(python3 -c 'import json,sys; print(json.dumps({"query": sys.argv[1], "mode": "auto", "limit": 10}))' "$query")
     response=$(request POST "/v1/memory/query" "$payload")
-    if echo "$response" | python3 - "$needle" <<'PY'
+    if echo "$response" | python3 -c '
 import json, sys
 needle = sys.argv[1].lower()
 data = json.load(sys.stdin)
@@ -141,7 +141,7 @@ for text in walk(data):
     if needle in text.lower():
         raise SystemExit(0)
 raise SystemExit(1)
-PY
+' "$needle"
     then
       echo "$response"
       return 0
