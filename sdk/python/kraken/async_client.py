@@ -8,6 +8,7 @@ from typing import Any
 from kraken._transport import AsyncTransport
 from kraken.async_identity import AsyncIdentity
 from kraken.async_memory import AsyncMemory
+from kraken.async_schedules import AsyncSchedules
 from kraken.async_sessions import AsyncSessions
 from kraken.async_skills import AsyncSkills
 from kraken.async_tools import AsyncTools
@@ -33,6 +34,7 @@ class AsyncKrakenClient:
         self.skills = AsyncSkills(self._transport)
         self.tools = AsyncTools(self._transport)
         self.identity = AsyncIdentity(self._transport)
+        self.schedules = AsyncSchedules(self._transport)
 
     async def chat(
         self,
