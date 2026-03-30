@@ -90,8 +90,13 @@ body {
 }
 
 /* Markdown content styling */
+.prose {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
 .prose pre {
   @apply bg-muted rounded-lg p-3 overflow-x-auto text-sm;
+  max-width: 100%;
 }
 .prose code {
   @apply bg-muted px-1 py-0.5 rounded text-sm;

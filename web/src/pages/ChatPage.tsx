@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Plus, Loader2, ChevronDown, Check, X } from "lucide-react";
+import { Send, Plus, Loader2, ChevronDown, Check, X, MessageSquare } from "lucide-react";
 import { streamChat, api } from "@/lib/api";
 import { useSessions, useCreateSession } from "@/hooks/useSessions";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,16 @@ export function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const newSessionKeys = useRef(new Set<string>());
 
-  const { data: sessionsData } = useSessions(10);
+  const { data: sessionsData } = useSessions(50);
   const createSession = useCreateSession();
+
+  // Auto-resize textarea
+  const autoResize = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, []);
 
   // Load models on mount
   useEffect(() => {
@@ -175,30 +183,44 @@ export function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full">
+      {/* Chat sidebar */}
+      <div className="w-56 border-r bg-sidebar flex flex-col shrink-0">
+        <div className="p-2">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium border border-border hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New Chat
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto px-2 pb-2 space-y-0.5">
+          {sessionsData?.sessions.map((s) => {
+            const key = s.session_key || s.id;
+            const label = s.name || s.session_key || s.id.slice(0, 8);
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSessionKey(key)}
+                className={cn(
+                  "flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate",
+                  key === sessionKey
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50"
+                )}
+              >
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main chat area */}
+      <div className="flex flex-col flex-1 min-w-0">
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 h-14 border-b shrink-0">
-        <button
-          onClick={handleNewChat}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-3.5 h-3.5" /> New Chat
-        </button>
-
-        {/* Session selector */}
-        <select
-          value={sessionKey}
-          onChange={(e) => setSessionKey(e.target.value)}
-          className="px-2 py-1.5 rounded-lg border bg-background text-xs max-w-48"
-        >
-          <option value="">Select session...</option>
-          {sessionsData?.sessions.map((s) => (
-            <option key={s.id} value={s.session_key || s.id}>
-              {s.name || s.session_key || s.id.slice(0, 8)}
-            </option>
-          ))}
-        </select>
-
         {/* Model selector */}
         <select
           value={model}
@@ -238,14 +260,14 @@ export function ChatPage() {
             >
               <div
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm",
+                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm overflow-hidden",
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-foreground"
                 )}
               >
                 {msg.role === "assistant" ? (
-                  <div className="prose">
+                  <div className="prose break-words overflow-hidden">
                     {!msg.content && streaming && msg.id === messages[messages.length - 1]?.id ? (
                       <div className="space-y-0">
                         {timeline.length > 0 ? (
@@ -349,12 +371,12 @@ export function ChatPage() {
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); autoResize(); }}
             onKeyDown={handleKeyDown}
             placeholder="Message Kraken..."
             rows={1}
-            className="flex-1 resize-none px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring max-h-32"
-            style={{ minHeight: "42px" }}
+            className="flex-1 resize-none px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring overflow-y-auto"
+            style={{ minHeight: "42px", maxHeight: "160px" }}
           />
           <button
             onClick={handleSend}
@@ -367,6 +389,7 @@ export function ChatPage() {
             {streaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>
+      </div>
       </div>
     </div>
   );
