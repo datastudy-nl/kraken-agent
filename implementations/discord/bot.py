@@ -70,12 +70,20 @@ async def on_message(message: discord.Message) -> None:
     # if message.channel.id != 1487128195537833994:  # Only respond in the specified channel
     #     return
 
+    # Extract image URLs from attachments
+    image_urls = [
+        a.url
+        for a in message.attachments
+        if a.content_type and a.content_type.startswith("image/")
+    ]
+
     async with message.channel.typing():
         reply = await asyncio.to_thread(
             kraken.chat,
-            message.content,
+            message.content or "What's in this image?",
             session_key=f"discord-{message.channel.id}",
             session_name=f"Discord channel {message.channel.id}",
+            images=image_urls or None,
             metadata={"discord_user": str(message.author), "discord_user_id": str(message.author.id)},
         )
 
