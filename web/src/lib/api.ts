@@ -39,11 +39,18 @@ export const api = {
 };
 
 // SSE streaming for chat completions
+export interface StreamChunk {
+  type: "content" | "status";
+  content?: string;
+  status?: string;
+  detail?: string;
+}
+
 export async function* streamChat(
   messages: Array<{ role: string; content: string }>,
   model: string,
   sessionKey?: string,
-): AsyncGenerator<string> {
+): AsyncGenerator<StreamChunk> {
   const key = getApiKey();
   const res = await fetch(`${API_BASE}/v1/chat/completions`, {
     method: "POST",
@@ -85,8 +92,12 @@ export async function* streamChat(
 
       try {
         const parsed = JSON.parse(data);
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) yield content;
+        if (parsed.kraken_status) {
+          yield { type: "status", status: parsed.kraken_status.status, detail: parsed.kraken_status.detail };
+        } else {
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield { type: "content", content };
+        }
       } catch {
         // skip malformed chunks
       }

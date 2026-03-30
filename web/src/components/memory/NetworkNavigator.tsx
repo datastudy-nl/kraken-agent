@@ -482,7 +482,8 @@ export function NetworkNavigator() {
               linkDirectionalArrowRelPos={1}
               linkCurvature={0.15}
               linkWidth={linkWidth}
-              cooldownTicks={0}
+              cooldownTicks={1}
+              d3AlphaMin={1}
               enableZoomInteraction
               enablePanInteraction
               onBackgroundClick={() => setSelected(null)}
