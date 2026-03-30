@@ -175,6 +175,27 @@ async function searchMemoryItems(
   return scored;
 }
 
+function semanticSimilarity(a: string, b: string): number {
+  const left = new Set(normalizeMemoryText(a).split(" ").filter(Boolean));
+  const right = new Set(normalizeMemoryText(b).split(" ").filter(Boolean));
+  if (left.size === 0 || right.size === 0) return 0;
+  const overlap = [...left].filter((token) => right.has(token)).length;
+  return overlap / Math.max(left.size, right.size);
+}
+
+function detectContradiction(a: string, b: string): boolean {
+  const left = normalizeMemoryText(a);
+  const right = normalizeMemoryText(b);
+  if (left === right) return false;
+  const negationPairs = [
+    [" likes ", " dislikes "],
+    [" prefer ", " dislike "],
+    [" is ", " is not "],
+    [" uses ", " does not use "],
+  ] as const;
+  return negationPairs.some(([pos, neg]) => (left.includes(pos) && right.includes(neg)) || (left.includes(neg) && right.includes(pos)));
+}
+
 async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKind, scope: MemoryItemScope, replacementId: string) {
   const normalized = normalizeMemoryText(content);
   const rows = await db
@@ -190,17 +211,43 @@ async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKin
     );
 
   const rowList = Array.isArray(rows) ? rows : [];
-  const overlapping = rowList.filter((row) => normalizeMemoryText(row.content) === normalized);
-  if (overlapping.length === 0) return;
+  const exactMatches = rowList.filter((row) => normalizeMemoryText(row.content) === normalized);
+  const contradictions = rowList.filter((row) => detectContradiction(row.content, content));
+  const semanticallySimilar = rowList.filter((row) => semanticSimilarity(row.content, content) >= 0.85);
 
-  await db
-    .update(schema.memoryItems)
-    .set({
-      status: "superseded",
-      supersededBy: replacementId,
-      updatedAt: new Date(),
-    })
-    .where(inArray(schema.memoryItems.id, overlapping.map((row) => row.id)));
+  if (exactMatches.length > 0) {
+    await db
+      .update(schema.memoryItems)
+      .set({
+        status: "superseded",
+        supersededBy: replacementId,
+        updatedAt: new Date(),
+      })
+      .where(inArray(schema.memoryItems.id, exactMatches.map((row) => row.id)));
+  }
+
+  if (contradictions.length > 0) {
+    await db
+      .update(schema.memoryItems)
+      .set({
+        status: "contradicted",
+        supersededBy: replacementId,
+        updatedAt: new Date(),
+      })
+      .where(inArray(schema.memoryItems.id, contradictions.map((row) => row.id)));
+  }
+
+  const duplicateCandidates = semanticallySimilar.filter((row) => !exactMatches.some((m) => m.id === row.id) && !contradictions.some((m) => m.id === row.id));
+  if (duplicateCandidates.length > 0) {
+    await db
+      .update(schema.memoryItems)
+      .set({
+        status: "archived",
+        supersededBy: replacementId,
+        updatedAt: new Date(),
+      })
+      .where(inArray(schema.memoryItems.id, duplicateCandidates.map((row) => row.id)));
+  }
 }
 
 async function createMemoryItem(input: {
@@ -688,6 +735,7 @@ export async function recallMemories(query: string, limit: number = 10): Promise
 
 export async function runMemoryMaintenance(now: Date = new Date()) {
   const staleCutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const archiveCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
 
   const expiredRows = await db
     .select()
@@ -713,18 +761,33 @@ export async function runMemoryMaintenance(now: Date = new Date()) {
     );
 
   const staleIds = [...new Set([...expiredRows, ...weakRows].map((row) => row.id))];
-  if (staleIds.length === 0) {
-    await refreshUserModelFromCuratedMemory();
-    return { updated: 0 };
+
+  const archiveRows = await db
+    .select()
+    .from(schema.memoryItems)
+    .where(
+      and(
+        eq(schema.memoryItems.status, "stale"),
+        sql`${schema.memoryItems.updatedAt} < ${archiveCutoff.toISOString()}`,
+      ),
+    );
+
+  if (staleIds.length > 0) {
+    await db
+      .update(schema.memoryItems)
+      .set({ status: "stale", updatedAt: now })
+      .where(inArray(schema.memoryItems.id, staleIds));
   }
 
-  await db
-    .update(schema.memoryItems)
-    .set({ status: "stale", updatedAt: now })
-    .where(inArray(schema.memoryItems.id, staleIds));
+  if (archiveRows.length > 0) {
+    await db
+      .update(schema.memoryItems)
+      .set({ status: "archived", updatedAt: now })
+      .where(inArray(schema.memoryItems.id, archiveRows.map((row) => row.id)));
+  }
 
   await refreshUserModelFromCuratedMemory();
-  return { updated: staleIds.length };
+  return { updated: staleIds.length + archiveRows.length };
 }
 
 export async function queryMemory(input: {
@@ -950,6 +1013,7 @@ export async function ingestConversationToGraph(input: {
       confidence: 0.65,
       metadata: {
         inferredFrom: "conversation_extraction",
+        evidence: [{ type: "conversation", sessionId: input.sessionId }],
       },
     }).catch(() => undefined);
   }
@@ -1002,6 +1066,7 @@ export async function runDreamCycle() {
       confidence: 0.55,
       metadata: {
         inferredFrom: "dream_cycle",
+        evidence: [{ type: "dream_cycle" }],
       },
     }).catch(() => undefined);
   }

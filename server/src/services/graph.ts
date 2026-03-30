@@ -21,6 +21,19 @@ export async function closeDriver(): Promise<void> {
   if (driver) await driver.close();
 }
 
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function parseProperties(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
 // --- Schema bootstrap (run once at startup) ---
 export async function initGraphSchema(): Promise<void> {
   const session = getSession();
@@ -37,12 +50,13 @@ export async function initGraphSchema(): Promise<void> {
     await session.run(
       "CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)",
     );
+    await session.run(
+      "CREATE INDEX entity_normalized_name IF NOT EXISTS FOR (e:Entity) ON (e.normalizedName)",
+    );
   } finally {
     await session.close();
   }
 }
-
-// ===== Entity CRUD =====
 
 export interface GraphEntity {
   id: string;
@@ -58,15 +72,36 @@ export async function createEntity(
   const session = getSession();
   try {
     const result = await session.run(
-      `CREATE (e:Entity {
-        id: $id, name: $name, type: $type,
-        properties: $properties,
-        createdAt: datetime()
-      }) RETURN e`,
+      `MERGE (e:Entity {normalizedName: $normalizedName, type: $type})
+       ON CREATE SET
+         e.id = $id,
+         e.name = $name,
+         e.type = $type,
+         e.normalizedName = $normalizedName,
+         e.properties = $properties,
+         e.aliases = [$name],
+         e.evidenceCount = 1,
+         e.confidence = 0.8,
+         e.status = 'active',
+         e.createdAt = datetime(),
+         e.updatedAt = datetime(),
+         e.lastSeenAt = datetime()
+       ON MATCH SET
+         e.properties = $properties,
+         e.aliases = CASE
+           WHEN any(alias IN coalesce(e.aliases, []) WHERE toLower(alias) = toLower($name)) THEN coalesce(e.aliases, [])
+           ELSE coalesce(e.aliases, []) + $name
+         END,
+         e.evidenceCount = coalesce(e.evidenceCount, 0) + 1,
+         e.updatedAt = datetime(),
+         e.lastSeenAt = datetime(),
+         e.status = 'active'
+       RETURN e`,
       {
         id: entity.id,
         name: entity.name,
         type: entity.type,
+        normalizedName: normalizeName(entity.name),
         properties: JSON.stringify(entity.properties),
       },
     );
@@ -75,7 +110,7 @@ export async function createEntity(
       id: node.id,
       name: node.name,
       type: node.type,
-      properties: JSON.parse(node.properties),
+      properties: parseProperties(node.properties),
       createdAt: node.createdAt.toString(),
     };
   } finally {
@@ -87,8 +122,14 @@ export async function findEntityByName(name: string): Promise<GraphEntity | null
   const session = getSession();
   try {
     const result = await session.run(
-      "MATCH (e:Entity) WHERE toLower(e.name) = toLower($name) RETURN e LIMIT 1",
-      { name },
+      `MATCH (e:Entity)
+       WHERE e.normalizedName = $normalizedName
+          OR toLower(e.name) = toLower($name)
+          OR any(alias IN coalesce(e.aliases, []) WHERE toLower(alias) = toLower($name))
+       RETURN e
+       ORDER BY coalesce(e.evidenceCount, 0) DESC, e.createdAt DESC
+       LIMIT 1`,
+      { name, normalizedName: normalizeName(name) },
     );
     if (result.records.length === 0) return null;
     const node = result.records[0].get("e").properties;
@@ -96,7 +137,7 @@ export async function findEntityByName(name: string): Promise<GraphEntity | null
       id: node.id,
       name: node.name,
       type: node.type,
-      properties: JSON.parse(node.properties ?? "{}"),
+      properties: parseProperties(node.properties),
       createdAt: node.createdAt?.toString() ?? "",
     };
   } finally {
@@ -119,8 +160,7 @@ export async function listEntities(opts: {
       params.type = opts.type;
     }
     if (opts.search) {
-      // Search across name, type, and properties for broader matching
-      where += " AND (toLower(e.name) CONTAINS toLower($search) OR toLower(e.type) CONTAINS toLower($search) OR toLower(e.properties) CONTAINS toLower($search))";
+      where += " AND (toLower(e.name) CONTAINS toLower($search) OR toLower(e.type) CONTAINS toLower($search) OR toLower(e.properties) CONTAINS toLower($search) OR any(alias IN coalesce(e.aliases, []) WHERE toLower(alias) CONTAINS toLower($search)))";
       params.search = opts.search;
     }
 
@@ -131,7 +171,7 @@ export async function listEntities(opts: {
     const total = countResult.records[0].get("total").toNumber();
 
     const result = await session.run(
-      `MATCH (e:Entity) WHERE true ${where} RETURN e ORDER BY e.createdAt DESC LIMIT $limit`,
+      `MATCH (e:Entity) WHERE true ${where} RETURN e ORDER BY coalesce(e.evidenceCount, 0) DESC, e.createdAt DESC LIMIT $limit`,
       params,
     );
 
@@ -141,7 +181,7 @@ export async function listEntities(opts: {
         id: node.id,
         name: node.name,
         type: node.type,
-        properties: JSON.parse(node.properties ?? "{}"),
+        properties: parseProperties(node.properties),
         createdAt: node.createdAt?.toString() ?? "",
       };
     });
@@ -161,8 +201,6 @@ export async function deleteEntity(id: string): Promise<void> {
   }
 }
 
-// ===== Relationships =====
-
 export interface GraphRelationship {
   id: string;
   source: string;
@@ -175,18 +213,31 @@ export interface GraphRelationship {
 export async function createRelationship(rel: Omit<GraphRelationship, "createdAt">): Promise<GraphRelationship> {
   const session = getSession();
   try {
+    const mergedProperties = { ...(rel.properties ?? {}), lastSeenAt: new Date().toISOString() };
     const result = await session.run(
       `MATCH (a:Entity {id: $source}), (b:Entity {id: $target})
-       CREATE (a)-[r:RELATES_TO {
-         id: $id, type: $type, properties: $properties, createdAt: datetime()
-       }]->(b)
+       MERGE (a)-[r:RELATES_TO {type: $type}]->(b)
+       ON CREATE SET
+         r.id = $id,
+         r.type = $type,
+         r.properties = $properties,
+         r.createdAt = datetime(),
+         r.updatedAt = datetime(),
+         r.evidenceCount = 1,
+         r.confidence = 0.7,
+         r.status = 'active'
+       ON MATCH SET
+         r.properties = $properties,
+         r.updatedAt = datetime(),
+         r.evidenceCount = coalesce(r.evidenceCount, 0) + 1,
+         r.status = 'active'
        RETURN r`,
       {
         id: rel.id,
         source: rel.source,
         target: rel.target,
         type: rel.type,
-        properties: JSON.stringify(rel.properties),
+        properties: JSON.stringify(mergedProperties),
       },
     );
     const edge = result.records[0].get("r").properties;
@@ -195,15 +246,13 @@ export async function createRelationship(rel: Omit<GraphRelationship, "createdAt
       source: rel.source,
       target: rel.target,
       type: edge.type,
-      properties: JSON.parse(edge.properties ?? "{}"),
+      properties: parseProperties(edge.properties),
       createdAt: edge.createdAt.toString(),
     };
   } finally {
     await session.close();
   }
 }
-
-// ===== Community operations =====
 
 export interface GraphCommunity {
   id: string;
@@ -216,12 +265,14 @@ export interface GraphCommunity {
 export async function upsertCommunity(community: GraphCommunity): Promise<void> {
   const session = getSession();
   try {
+    const stableId = normalizeName(community.name || community.summary).replace(/[^a-z0-9]+/g, "-").slice(0, 80) || community.id;
     await session.run(
       `MERGE (c:Community {id: $id})
+       ON CREATE SET c.createdAt = datetime(), c.retrievalCount = 0
        SET c.name = $name, c.summary = $summary, c.level = $level,
            c.entityIds = $entityIds, c.updatedAt = datetime()`,
       {
-        id: community.id,
+        id: stableId,
         name: community.name,
         summary: community.summary,
         level: neo4j.int(community.level),
@@ -229,12 +280,11 @@ export async function upsertCommunity(community: GraphCommunity): Promise<void> 
       },
     );
 
-    // Link entities to community
     for (const entityId of community.entityIds) {
       await session.run(
         `MATCH (e:Entity {id: $entityId}), (c:Community {id: $communityId})
          MERGE (e)-[:BELONGS_TO]->(c)`,
-        { entityId, communityId: community.id },
+        { entityId, communityId: stableId },
       );
     }
   } finally {
@@ -268,8 +318,6 @@ export async function listCommunities(level?: number): Promise<GraphCommunity[]>
   }
 }
 
-// ===== Graph traversal for queries =====
-
 export async function getEntityNeighborhood(
   entityId: string,
   depth: number = 2,
@@ -297,11 +345,10 @@ export async function getEntityNeighborhood(
       id: n.properties.id,
       name: n.properties.name,
       type: n.properties.type,
-      properties: JSON.parse(n.properties.properties ?? "{}"),
+      properties: parseProperties(n.properties.properties),
       createdAt: n.properties.createdAt?.toString() ?? "",
     }));
 
-    // Map Neo4j internal node IDs to entity UUIDs so edges reference the right IDs
     const neoIdToUuid = new Map<string, string>();
     for (const n of rawNodes) {
       neoIdToUuid.set(n.identity.toString(), n.properties.id);
@@ -312,7 +359,7 @@ export async function getEntityNeighborhood(
       source: neoIdToUuid.get(r.start.toString()) ?? r.start?.toString() ?? "",
       target: neoIdToUuid.get(r.end.toString()) ?? r.end?.toString() ?? "",
       type: r.properties.type ?? r.type,
-      properties: JSON.parse(r.properties.properties ?? "{}"),
+      properties: parseProperties(r.properties.properties),
       createdAt: r.properties.createdAt?.toString() ?? "",
     }));
 

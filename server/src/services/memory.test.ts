@@ -281,7 +281,7 @@ describe("curated memory items", () => {
     expect(result.inferredMemories[0].content).toBe("User likes direct answers");
   });
 
-  it("maintenance marks expired or weak memories as stale and rebuilds user model", async () => {
+  it("maintenance marks expired or weak memories as stale and archives long-stale memories", async () => {
     state.memoryRows = [
       {
         id: "mem-1",
@@ -300,11 +300,29 @@ describe("curated memory items", () => {
         lastRetrievedAt: null,
         expiresAt: new Date("2025-02-01T00:00:00Z"),
       },
+      {
+        id: "mem-2",
+        content: "Old stale preference",
+        kind: "preference",
+        scope: "user",
+        sourceType: "assistant_inferred",
+        status: "stale",
+        tags: [],
+        metadata: {},
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+        updatedAt: new Date("2025-01-15T00:00:00Z"),
+        confidence: 50,
+        importance: 50,
+        reuseCount: 0,
+        lastRetrievedAt: null,
+        expiresAt: null,
+      },
     ];
 
     const result = await runMemoryMaintenance(new Date("2026-06-01T00:00:00Z"));
-    expect(result).toEqual({ updated: 1 });
+    expect(result).toEqual({ updated: 4 });
     expect(state.updatedMemoryItems.some((item) => item.status === "stale")).toBe(true);
+    expect(state.updatedMemoryItems.some((item) => item.status === "archived")).toBe(true);
   });
 
   it("ingestConversationToGraph stores candidate inferred memories instead of directly mutating the user model", async () => {
@@ -319,5 +337,34 @@ describe("curated memory items", () => {
     expect(state.memoryRows).toHaveLength(1);
     expect(state.memoryRows[0].sourceType).toBe("dream_inference");
     expect(state.memoryRows[0].status).toBe("candidate");
+  });
+});
+
+
+describe("memory item consolidation", () => {
+  it("marks contradictory memories when a new explicit fact conflicts", async () => {
+    state.memoryRows = [{
+      id: "mem-old",
+      sessionId: "session-1",
+      content: "User likes long explanations",
+      kind: "preference",
+      scope: "user",
+      sourceType: "user_explicit",
+      status: "active",
+      tags: ["preference"],
+      metadata: {},
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+      confidence: 100,
+      importance: 95,
+      reuseCount: 0,
+      lastRetrievedAt: null,
+      lastConfirmedAt: null,
+      expiresAt: null,
+      supersededBy: null,
+    }];
+
+    await storeExplicitMemory("session-1", "User dislikes long explanations", ["preference"]);
+    expect(state.updatedMemoryItems.some((item) => item.status === "contradicted")).toBe(true);
   });
 });
