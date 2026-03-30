@@ -37,6 +37,10 @@ sandboxesRouter.get("/:sessionId", async (c) => {
 // --- GET /v1/sandboxes/:sessionId/ports --- List port forwards
 sandboxesRouter.get("/:sessionId/ports", async (c) => {
   const sessionId = String(c.req.param("sessionId"));
+  const info = await getSandboxInfo(sessionId);
+  if (!info) {
+    return c.json({ error: "Sandbox not found" }, 404);
+  }
   const ports = getPortForwards(sessionId);
   return c.json({ session_id: sessionId, ports });
 });
@@ -81,6 +85,10 @@ sandboxesRouter.delete("/:sessionId/ports/:port", async (c) => {
 // --- GET /v1/sandboxes/:sessionId/processes --- List processes
 sandboxesRouter.get("/:sessionId/processes", async (c) => {
   const sessionId = String(c.req.param("sessionId"));
+  const info = await getSandboxInfo(sessionId);
+  if (!info) {
+    return c.json({ error: "Sandbox not found" }, 404);
+  }
   try {
     const output = await listProcesses(sessionId);
     return c.json({ session_id: sessionId, processes: output });
