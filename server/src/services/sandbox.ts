@@ -293,6 +293,26 @@ export async function readFileFromSandbox(
 }
 
 /**
+ * Read a binary file from the sandbox workspace and return as base64.
+ */
+export async function readBinaryFromSandbox(
+  sessionId: string,
+  filePath: string,
+): Promise<{ base64: string; size: number }> {
+  const normalized = path.normalize(filePath).replace(/^(\.\.[/\\])+/, "");
+  if (path.isAbsolute(normalized)) {
+    throw new Error("Absolute paths not allowed");
+  }
+  const base = path.resolve(workspacePath(sessionId));
+  const fullPath = path.resolve(base, normalized);
+  if (fullPath !== base && !fullPath.startsWith(base + path.sep)) {
+    throw new Error("Path traversal detected");
+  }
+  const buf = await fs.readFile(fullPath);
+  return { base64: buf.toString("base64"), size: buf.length };
+}
+
+/**
  * List files in the sandbox workspace.
  */
 export async function listFilesInSandbox(

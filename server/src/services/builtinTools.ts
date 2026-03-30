@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import path from "node:path";
 import { listTools, createTool } from "./tools.js";
 import { getRelevantSkills, createSkill } from "./skills.js";
 import {
@@ -13,6 +14,7 @@ import {
   shellExec,
   writeFileInSandbox,
   readFileFromSandbox,
+  readBinaryFromSandbox,
   listFilesInSandbox,
   addPortForward,
   removePortForward,
@@ -1655,6 +1657,141 @@ export function getBuiltinTools(sessionId: string) {
           return { status: "ok", name, value };
         } catch (err: any) {
           return { status: "error", name, message: err.message };
+        }
+      },
+    }),
+
+    generate_image: tool({
+      description:
+        "Generate an image from a text prompt using DALL-E. The image is saved to the sandbox workspace and can be served or downloaded. " +
+        "Use this when the user asks you to create, generate, draw, or design an image, picture, logo, illustration, etc. " +
+        "Returns the file path in the workspace and a base64-encoded preview.",
+      parameters: z.object({
+        prompt: z.string().describe("Detailed description of the image to generate. Be specific about style, content, colors, composition."),
+        size: z
+          .enum(["256x256", "512x512", "1024x1024"])
+          .describe("Image dimensions. Use '1024x1024' for high quality, '512x512' for normal, '256x256' for quick/small."),
+        filename: z
+          .string()
+          .describe("Output filename in the workspace (e.g. 'generated-logo.png', 'diagram.png'). Must end in .png"),
+      }),
+      execute: async ({ prompt, size, filename }) => {
+        try {
+          const apiKey = config.OPENAI_API_KEY;
+          if (!apiKey) {
+            return { status: "error", message: "OPENAI_API_KEY is not configured on the server." };
+          }
+
+          const response = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "dall-e-2",
+              prompt,
+              n: 1,
+              size,
+              response_format: "b64_json",
+            }),
+            signal: AbortSignal.timeout(60000),
+          });
+
+          if (!response.ok) {
+            const err = (await response.json()) as Record<string, any>;
+            return {
+              status: "error",
+              message: err.error?.message || `OpenAI API returned ${response.status}`,
+            };
+          }
+
+          const data = (await response.json()) as { data: Array<{ b64_json: string }> };
+          const b64 = data.data[0].b64_json;
+          const buf = Buffer.from(b64, "base64");
+
+          // Save to workspace
+          const safeName = filename.endsWith(".png") ? filename : `${filename}.png`;
+          await writeFileInSandbox(sessionId, safeName, "");
+          // Write raw binary (writeFileInSandbox writes utf-8, so use the workspace path directly)
+          const wsPath = path.join(config.KRAKEN_WORKSPACES_PATH, sessionId);
+          const normalized = path.normalize(safeName).replace(/^(\.\.[/\\])+/, "");
+          const fullPath = path.resolve(wsPath, normalized);
+          const fsP = await import("node:fs/promises");
+          await fsP.mkdir(path.dirname(fullPath), { recursive: true });
+          await fsP.writeFile(fullPath, buf);
+
+          return {
+            status: "ok",
+            path: safeName,
+            size_bytes: buf.length,
+            dimensions: size,
+            prompt_used: prompt,
+            base64_preview: b64.slice(0, 200) + "...",
+            message: `Image saved to workspace as '${safeName}'. Use get_sandbox_file to retrieve the full file.`,
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    get_sandbox_file: tool({
+      description:
+        "Retrieve any file from the sandbox workspace as base64-encoded data. Use this for binary files like images, PDFs, archives, " +
+        "audio files, or any generated output that needs to be sent back to the user. " +
+        "Returns the file content as a base64 string along with the MIME type. " +
+        "For text files, prefer using read_file instead.",
+      parameters: z.object({
+        path: z
+          .string()
+          .describe("Relative file path within the sandbox workspace (e.g. 'output.png', 'results/chart.pdf')"),
+      }),
+      execute: async ({ path: filePath }) => {
+        try {
+          const result = await readBinaryFromSandbox(sessionId, filePath);
+
+          // Determine MIME type from extension
+          const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+          const mimeTypes: Record<string, string> = {
+            png: "image/png",
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            gif: "image/gif",
+            webp: "image/webp",
+            svg: "image/svg+xml",
+            pdf: "application/pdf",
+            zip: "application/zip",
+            tar: "application/x-tar",
+            gz: "application/gzip",
+            mp3: "audio/mpeg",
+            wav: "audio/wav",
+            ogg: "audio/ogg",
+            mp4: "video/mp4",
+            json: "application/json",
+            csv: "text/csv",
+            txt: "text/plain",
+          };
+          const mime = mimeTypes[ext] ?? "application/octet-stream";
+
+          // Cap output for very large files (10 MB base64 ≈ 7.5 MB raw)
+          if (result.base64.length > 10_000_000) {
+            return {
+              status: "error",
+              message: `File is too large to return inline (${result.size} bytes). Use shell_exec to process or compress it first.`,
+              size_bytes: result.size,
+            };
+          }
+
+          return {
+            status: "ok",
+            path: filePath,
+            mime_type: mime,
+            size_bytes: result.size,
+            base64: result.base64,
+          };
+        } catch (err: any) {
+          return { status: "error", path: filePath, message: err.message };
         }
       },
     }),
