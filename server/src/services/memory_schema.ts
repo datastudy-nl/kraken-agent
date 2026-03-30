@@ -27,9 +27,16 @@ export const memoryTripleSchema = z.object({
   object: z.string().min(1),
 });
 
+export const extractedMemoryTripleSchema = z.object({
+  triple: memoryTripleSchema,
+  confidence: z.number().min(0).max(1),
+  rationale: z.string().min(1).optional(),
+});
+
 export type MemoryPredicate = z.infer<typeof memoryPredicateEnum>;
 export type MemoryKind = z.infer<typeof memoryKindEnum>;
 export type MemoryTriple = z.infer<typeof memoryTripleSchema>;
+export type ExtractedMemoryTriple = z.infer<typeof extractedMemoryTripleSchema>;
 
 export const DEFAULT_PREDICATE_BY_KIND: Record<MemoryKind, MemoryPredicate> = {
   fact: "states",

@@ -158,6 +158,16 @@ vi.mock("./llm.js", () => ({
   createEmbedding: vi.fn(async () => new Array(1536).fill(0.1)),
   dreamFromConversationWindow: vi.fn(async () => ({ skills: [], tools: [], userSignals: ["User likes direct answers"] })),
   extractMemoryFromConversation: vi.fn(async () => ({ entities: [], relationships: [], userSignals: ["User prefers short answers"] })),
+  extractStructuredMemoryTriple: vi.fn(async (fact: string) => {
+    const lower = fact.toLowerCase();
+    if (lower.includes("my name is lars")) return { triple: { subject: "user", predicate: "has_name", object: "lars" }, confidence: 0.99 };
+    if (lower.includes("my name is rowan")) return { triple: { subject: "user", predicate: "has_name", object: "rowan" }, confidence: 0.99 };
+    if (lower.includes("prefers short answers")) return { triple: { subject: "user", predicate: "prefers", object: "short answers" }, confidence: 0.98 };
+    if (lower.includes("prefers short practical answers")) return { triple: { subject: "user", predicate: "prefers", object: "short practical answers" }, confidence: 0.98 };
+    if (lower.includes("prefers short practical replies")) return { triple: { subject: "user", predicate: "prefers", object: "short practical replies" }, confidence: 0.98 };
+    if (lower.includes("dislikes long explanations")) return { triple: { subject: "user", predicate: "avoids", object: "long explanations" }, confidence: 0.97 };
+    return { triple: { subject: "memory", predicate: "states", object: lower }, confidence: 0.6 };
+  }),
 }));
 
 vi.mock("./graph.js", () => ({

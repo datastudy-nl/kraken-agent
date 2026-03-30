@@ -16,9 +16,10 @@ import {
   createEmbedding,
   dreamFromConversationWindow,
   extractMemoryFromConversation,
+  extractStructuredMemoryTriple,
 } from "./llm.js";
 import { setUserModel } from "./identity.js";
-import { DEFAULT_PREDICATE_BY_KIND, EXCLUSIVE_PREDICATES, memoryTripleSchema, OPPOSING_PREDICATES, type MemoryTriple } from "./memory_schema.js";
+import { DEFAULT_PREDICATE_BY_KIND, EXCLUSIVE_PREDICATES, memoryTripleSchema, OPPOSING_PREDICATES, type MemoryKind as SchemaMemoryKind, type MemoryTriple } from "./memory_schema.js";
 import { createTool, listTools } from "./tools.js";
 import { createSkill, listSkills } from "./skills.js";
 import { hybridSearch } from "./vector.js";
@@ -67,6 +68,14 @@ function normalizeMemoryText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function fallbackMemoryTriple(content: string, kind?: MemoryItemKind): MemoryTriple {
+  return memoryTripleSchema.parse({
+    subject: kind === "project_state" ? "project" : "memory",
+    predicate: DEFAULT_PREDICATE_BY_KIND[(kind ?? "fact") as SchemaMemoryKind],
+    object: normalizeMemoryText(content),
+  });
+}
+
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
   let dot = 0;
@@ -81,26 +90,17 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function extractMemoryTriple(content: string, kind?: MemoryItemKind, tags?: string[]): MemoryTriple {
-  const normalized = content.trim().replace(/\s+/g, " ");
-  const preferenceLike = kind === "preference" || (tags ?? []).some((tag) => tag.toLowerCase() === "preference");
-  if (preferenceLike) {
-    const preferMatch = normalized.match(/^(?:user|i)\s+(?:prefers?|likes?)\s+(.+)$/i);
-    if (preferMatch) return { subject: "user", predicate: "prefers", object: normalizeMemoryText(preferMatch[1]) };
-    const avoidMatch = normalized.match(/^(?:user|i)\s+(?:avoids?|dislikes?)\s+(.+)$/i);
-    if (avoidMatch) return { subject: "user", predicate: "avoids", object: normalizeMemoryText(avoidMatch[1]) };
+async function extractMemoryTriple(content: string, kind?: MemoryItemKind, tags?: string[]): Promise<MemoryTriple> {
+  const extracted = await extractStructuredMemoryTriple(content, kind as SchemaMemoryKind | undefined, tags);
+  if (extracted) {
+    return memoryTripleSchema.parse(extracted.triple);
   }
-  const nameMatch = normalized.match(/^(?:my name is|i am|i'm)\s+(.+)$/i);
-  if (nameMatch) return { subject: "user", predicate: "has_name", object: normalizeMemoryText(nameMatch[1]) };
-  const workMatch = normalized.match(/^(?:user|i)\s+(?:am working on|work on|working on)\s+(.+)$/i);
-  if (workMatch) return { subject: "user", predicate: "works_on", object: normalizeMemoryText(workMatch[1]) };
-  const goalMatch = normalized.match(/^(?:user|i)\s+(?:want|need|am trying)\s+(?:to\s+)?(.+)$/i);
-  if (goalMatch) return { subject: "user", predicate: "has_goal", object: normalizeMemoryText(goalMatch[1]) };
-  const constraintMatch = normalized.match(/^(?:user|i)\s+(?:cannot|can't|must not|should not)\s+(.+)$/i);
-  if (constraintMatch) return { subject: "user", predicate: "has_constraint", object: normalizeMemoryText(constraintMatch[1]) };
-  const codeMatch = normalized.match(/^(?:.*?code(?: is)?|door code(?: is)?)\s+(.+)$/i);
-  if (codeMatch) return { subject: "user", predicate: "has_code", object: normalizeMemoryText(codeMatch[1]) };
-  return { subject: kind === "project_state" ? "project" : "memory", predicate: DEFAULT_PREDICATE_BY_KIND[kind ?? "fact"], object: normalizeMemoryText(normalized) };
+
+  return memoryTripleSchema.parse({
+    subject: kind === "project_state" ? "project" : "memory",
+    predicate: DEFAULT_PREDICATE_BY_KIND[(kind ?? "fact") as SchemaMemoryKind],
+    object: normalizeMemoryText(content),
+  });
 }
 
 function arePredicatesContradictory(left: MemoryTriple["predicate"], right: MemoryTriple["predicate"]): boolean {
@@ -283,9 +283,9 @@ async function findSimilarMemoryItems(content: string, embedding: number[] | nul
       const rowEmbedding = parseEmbedding(row.embedding);
       if (embedding && rowEmbedding) return cosineSimilarity(embedding, rowEmbedding) >= 0.985;
       const rowTriple = memoryTripleSchema.parse({
-        subject: (row.subject as string | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
-        predicate: (row.predicate as MemoryTriple["predicate"] | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
-        object: (row.object as string | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+        subject: (row.subject as string | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.subject ?? fallbackMemoryTriple(row.content, kind).subject,
+        predicate: (row.predicate as MemoryTriple["predicate"] | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.predicate ?? fallbackMemoryTriple(row.content, kind).predicate,
+        object: (row.object as string | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.object ?? fallbackMemoryTriple(row.content, kind).object,
       });
       return rowTriple.subject === tripleSubject || normalizeMemoryText(row.content) === normalizeMemoryText(content);
     })
@@ -307,25 +307,25 @@ async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKin
   const similarRows = await findSimilarMemoryItems(content, embedding, kind, scope, replacementId, triple.subject);
   const exactMatches = similarRows.filter((row) => {
     const rowTriple = memoryTripleSchema.parse({
-      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
-      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
-      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? fallbackMemoryTriple(row.content, kind).subject,
+      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? fallbackMemoryTriple(row.content, kind).predicate,
+      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? fallbackMemoryTriple(row.content, kind).object,
     });
     return triplesEqual(rowTriple, triple);
   });
   const contradictions = similarRows.filter((row) => {
     const rowTriple = memoryTripleSchema.parse({
-      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
-      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
-      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? fallbackMemoryTriple(row.content, kind).subject,
+      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? fallbackMemoryTriple(row.content, kind).predicate,
+      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? fallbackMemoryTriple(row.content, kind).object,
     });
     return areTriplesContradictory(rowTriple, triple);
   });
   const duplicateCandidates = similarRows.filter((row) => {
     const rowTriple = memoryTripleSchema.parse({
-      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
-      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
-      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? fallbackMemoryTriple(row.content, kind).subject,
+      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? fallbackMemoryTriple(row.content, kind).predicate,
+      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? fallbackMemoryTriple(row.content, kind).object,
     });
     return rowTriple.subject === triple.subject && rowTriple.predicate === triple.predicate && !triplesEqual(rowTriple, triple) && !areTriplesContradictory(rowTriple, triple);
   });
@@ -363,7 +363,7 @@ async function createMemoryItem(input: {
   const expiresAt = input.expiresAt ?? classification.expiresAt;
 
   const embedding = input.content.length > 20 ? await createEmbedding(input.content).catch(() => null) : null;
-  const triple = memoryTripleSchema.parse(extractMemoryTriple(input.content, kind, input.tags));
+  const triple = await extractMemoryTriple(input.content, kind, input.tags);
 
   const [row] = await db
     .insert(schema.memoryItems)
