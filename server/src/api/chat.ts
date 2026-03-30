@@ -159,9 +159,11 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
     role: "assistant",
     content: result.text,
     model: body.model ?? config.KRAKEN_DEFAULT_MODEL,
-    tool_calls: (result.toolCalls ?? []).map((tc) => ({
+    tool_calls: (result.toolCalls ?? []).map((tc, index) => ({
+      id: `tool-${index + 1}`,
       name: tc.toolName,
       arguments: tc.args ?? {},
+      result: result.toolResults?.[index]?.result ?? null,
     })),
     usage: {
       prompt_tokens: result.usage?.inputTokens ?? 0,

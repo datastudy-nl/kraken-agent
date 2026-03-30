@@ -34,6 +34,7 @@ export interface GenerateArgs {
 export async function runChat(args: GenerateArgs): Promise<{
   text: string;
   toolCalls?: Array<{ toolName: string; args: unknown; result: unknown }>;
+  toolResults?: Array<{ toolName: string; args: unknown; result: unknown }>;
   usage?: { inputTokens?: number; outputTokens?: number };
 }> {
   const result = await generateText({
@@ -44,16 +45,29 @@ export async function runChat(args: GenerateArgs): Promise<{
     maxSteps: args.tools ? (args.maxSteps ?? 25) : undefined,
   });
 
+  const toolCalls = result.steps
+    ?.flatMap((step) =>
+      step.toolCalls?.map((tc) => ({
+        toolName: tc.toolName,
+        args: tc.args,
+        result: undefined,
+      })) ?? [],
+    ) ?? [];
+
+  const toolResults = result.steps
+    ?.flatMap((step) => {
+      const candidates = (step as { toolResults?: Array<{ toolName?: string; args?: unknown; result?: unknown }> }).toolResults ?? [];
+      return candidates.map((tr) => ({
+        toolName: tr.toolName ?? "unknown",
+        args: tr.args,
+        result: tr.result,
+      }));
+    }) ?? [];
+
   return {
     text: result.text,
-    toolCalls: result.steps
-      ?.flatMap((step) =>
-        step.toolCalls?.map((tc) => ({
-          toolName: tc.toolName,
-          args: tc.args,
-          result: undefined,
-        })) ?? [],
-      ),
+    toolCalls,
+    toolResults,
     usage: {
       inputTokens: result.usage?.promptTokens,
       outputTokens: result.usage?.completionTokens,
