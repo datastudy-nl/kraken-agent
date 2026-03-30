@@ -104,17 +104,16 @@ services:
     image: neo4j:5-community
     environment:
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-kraken}
-      - NEO4J_PLUGINS=["apoc"]
     ports:
       - "${NEO4J_BROWSER_PORT:-7474}:7474"
     volumes:
       - neo4j-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || wget -q --spider http://localhost:7687 || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 12
-      start_period: 30s
+      retries: 18
+      start_period: 60s
     restart: unless-stopped
 
   chromium:
