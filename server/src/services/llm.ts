@@ -25,7 +25,7 @@ export const embeddingModel = openai.embedding("text-embedding-3-small");
 
 export interface GenerateArgs {
   system: string;
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  messages: Array<{ role: "user" | "assistant" | "system"; content: any }>;
   model?: string;
   tools?: Record<string, CoreTool>;
   maxSteps?: number;

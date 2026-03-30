@@ -75,6 +75,7 @@ class KrakenClient:
         session_name: str | None = None,
         model: str | None = None,
         stream: bool = False,
+        images: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ChatResponse | Iterator[str]:
         """
@@ -87,6 +88,7 @@ class KrakenClient:
             session_name: Optional human-readable session label.
             model: Override the default LLM model.
             stream: If True, returns an iterator of text chunks.
+            images: Optional list of image URLs to include with the message.
             metadata: Arbitrary metadata to attach to the message.
 
         Returns:
@@ -104,6 +106,8 @@ class KrakenClient:
             payload["model"] = selected_model
         if metadata:
             payload["metadata"] = metadata
+        if images:
+            payload["images"] = images
 
         if stream:
             return self._transport.post_stream("/v1/chat", json=payload)

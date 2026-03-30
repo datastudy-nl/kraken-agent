@@ -19,6 +19,7 @@ export const chatRouter = new Hono();
 // --- Schemas ---
 const chatRequestSchema = z.object({
   message: z.string().min(1),
+  images: z.array(z.string().url()).optional(),
   session_id: z.string().optional(),
   session_key: z.string().min(1).optional(),
   session_name: z.string().min(1).optional(),
@@ -70,7 +71,16 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
     personality: sessionPersonality ?? body.personality,
   });
 
-  let llmMessages: Array<{ role: "user" | "assistant" | "system"; content: string }> = [
+  // Build the user content: plain string or multimodal parts with images
+  const userContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: URL }> =
+    body.images?.length
+      ? [
+          { type: "text" as const, text: body.message },
+          ...body.images.map((url) => ({ type: "image" as const, image: new URL(url) })),
+        ]
+      : body.message;
+
+  let llmMessages: Array<{ role: "user" | "assistant" | "system"; content: any }> = [
     ...trimmedHistory.map((m) => ({
       role: (m.role === "system" ? "system" : m.role === "assistant" ? "assistant" : "user") as
         | "user"
@@ -78,7 +88,7 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
         | "system",
       content: m.content,
     })),
-    { role: "user" as const, content: body.message },
+    { role: "user" as const, content: userContent },
   ];
 
   // Context compaction — prevent context window overflow
