@@ -26,6 +26,7 @@
         { "title": "Python SDK", "url": "/guide/python-sdk/" },
         { "title": "API Reference", "url": "/guide/api-reference/" },
         { "title": "Discord Bot", "url": "/guide/discord-bot/" },
+        { "title": "Telegram Bot", "url": "/guide/telegram-bot/" },
         { "title": "Scheduled Tasks", "url": "/guide/scheduled-tasks/" },
         { "title": "Browser Automation", "url": "/guide/browser-automation/" }
       ]

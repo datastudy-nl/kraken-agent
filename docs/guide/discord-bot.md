@@ -201,6 +201,7 @@ session_key = f"discord-{message.channel.id}"
 
 ## Next Steps
 
+- Connect [Telegram](telegram-bot.md) too — same brain, another channel
 - Set up [Scheduled Tasks](scheduled-tasks.md) to have Kraken post daily summaries to a channel
 - Configure the [Identity System](../concepts/identity.md) to link Discord users to other platforms
 - Customize the agent's personality via [SOUL.md](../concepts/identity.md#soulmd--the-agents-personality)

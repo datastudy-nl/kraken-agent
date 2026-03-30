@@ -159,6 +159,7 @@ Every conversation makes Kraken smarter. It's not just answering — it's buildi
 Your assistant is running. Now connect it to your life:
 
 - [Discord Bot](../guide/discord-bot.md) — talk to your assistant from Discord
+- [Telegram Bot](../guide/telegram-bot.md) — talk to your assistant from Telegram
 - [Scheduled Tasks](../guide/scheduled-tasks.md) — automate recurring work
 - [Browser Automation](../guide/browser-automation.md) — let it research the web for you
 - [Configuration](configuration.md) — all environment variables and tuning options
