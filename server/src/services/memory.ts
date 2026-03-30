@@ -18,6 +18,7 @@ import {
   extractMemoryFromConversation,
 } from "./llm.js";
 import { setUserModel } from "./identity.js";
+import { DEFAULT_PREDICATE_BY_KIND, EXCLUSIVE_PREDICATES, memoryTripleSchema, OPPOSING_PREDICATES, type MemoryTriple } from "./memory_schema.js";
 import { createTool, listTools } from "./tools.js";
 import { createSkill, listSkills } from "./skills.js";
 import { hybridSearch } from "./vector.js";
@@ -35,13 +36,6 @@ export type MemoryItemKind =
 export type MemoryItemStatus = "active" | "candidate" | "superseded" | "stale" | "archived" | "contradicted";
 export type MemoryItemScope = "global" | "user" | "session" | "task";
 export type MemoryItemSource = "user_explicit" | "assistant_inferred" | "graph_extracted" | "compaction_summary" | "dream_inference";
-export type MemoryItemRelation = "prefers" | "avoids" | "has_name" | "works_on" | "has_goal" | "has_constraint" | "has_code" | "states";
-
-interface MemoryTriple {
-  subject: string;
-  predicate: MemoryItemRelation;
-  object: string;
-}
 
 interface MemoryItemRecord {
   id: string;
@@ -61,6 +55,9 @@ interface MemoryItemRecord {
   supersededBy: string | null;
   createdAt: Date;
   updatedAt: Date;
+  subject: string | null;
+  predicate: string | null;
+  object: string | null;
   metadata: Record<string, unknown>;
 }
 
@@ -103,11 +100,11 @@ function extractMemoryTriple(content: string, kind?: MemoryItemKind, tags?: stri
   if (constraintMatch) return { subject: "user", predicate: "has_constraint", object: normalizeMemoryText(constraintMatch[1]) };
   const codeMatch = normalized.match(/^(?:.*?code(?: is)?|door code(?: is)?)\s+(.+)$/i);
   if (codeMatch) return { subject: "user", predicate: "has_code", object: normalizeMemoryText(codeMatch[1]) };
-  return { subject: kind === "project_state" ? "project" : "memory", predicate: "states", object: normalizeMemoryText(normalized) };
+  return { subject: kind === "project_state" ? "project" : "memory", predicate: DEFAULT_PREDICATE_BY_KIND[kind ?? "fact"], object: normalizeMemoryText(normalized) };
 }
 
-function arePredicatesContradictory(left: MemoryItemRelation, right: MemoryItemRelation): boolean {
-  return (left === "prefers" && right === "avoids") || (left === "avoids" && right === "prefers");
+function arePredicatesContradictory(left: MemoryTriple["predicate"], right: MemoryTriple["predicate"]): boolean {
+  return OPPOSING_PREDICATES[left]?.includes(right) ?? false;
 }
 
 function parseEmbedding(value: unknown): number[] | null {
@@ -285,7 +282,11 @@ async function findSimilarMemoryItems(content: string, embedding: number[] | nul
     .filter((row) => {
       const rowEmbedding = parseEmbedding(row.embedding);
       if (embedding && rowEmbedding) return cosineSimilarity(embedding, rowEmbedding) >= 0.985;
-      const rowTriple = ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+      const rowTriple = memoryTripleSchema.parse({
+        subject: (row.subject as string | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
+        predicate: (row.predicate as MemoryTriple["predicate"] | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
+        object: (row.object as string | null) ?? ((row.metadata as Record<string, unknown> | undefined)?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+      });
       return rowTriple.subject === tripleSubject || normalizeMemoryText(row.content) === normalizeMemoryText(content);
     })
     .map((row) => ({ id: row.id, content: row.content, metadata: (row.metadata as Record<string, unknown>) ?? {} }));
@@ -297,25 +298,35 @@ function triplesEqual(left: MemoryTriple, right: MemoryTriple): boolean {
 
 function areTriplesContradictory(left: MemoryTriple, right: MemoryTriple): boolean {
   if (left.subject !== right.subject) return false;
-  if (left.predicate === right.predicate && left.predicate !== "states") return left.object !== right.object;
+  if (left.predicate === right.predicate && EXCLUSIVE_PREDICATES.has(left.predicate)) return left.object !== right.object;
   if (arePredicatesContradictory(left.predicate, right.predicate)) return left.object === right.object;
-  if (left.predicate === "has_name" && right.predicate === "has_name") return left.object !== right.object;
-  if (left.predicate === "has_code" && right.predicate === "has_code") return left.object !== right.object;
   return false;
 }
 
 async function supersedeMatchingMemoryItems(content: string, kind: MemoryItemKind, scope: MemoryItemScope, replacementId: string, embedding: number[] | null, triple: MemoryTriple) {
   const similarRows = await findSimilarMemoryItems(content, embedding, kind, scope, replacementId, triple.subject);
   const exactMatches = similarRows.filter((row) => {
-    const rowTriple = (row.metadata?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+    const rowTriple = memoryTripleSchema.parse({
+      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
+      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
+      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+    });
     return triplesEqual(rowTriple, triple);
   });
   const contradictions = similarRows.filter((row) => {
-    const rowTriple = (row.metadata?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+    const rowTriple = memoryTripleSchema.parse({
+      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
+      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
+      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+    });
     return areTriplesContradictory(rowTriple, triple);
   });
   const duplicateCandidates = similarRows.filter((row) => {
-    const rowTriple = (row.metadata?.triple as MemoryTriple | undefined) ?? extractMemoryTriple(row.content, kind);
+    const rowTriple = memoryTripleSchema.parse({
+      subject: (row as any).subject ?? (row.metadata?.triple as MemoryTriple | undefined)?.subject ?? extractMemoryTriple(row.content, kind).subject,
+      predicate: (row as any).predicate ?? (row.metadata?.triple as MemoryTriple | undefined)?.predicate ?? extractMemoryTriple(row.content, kind).predicate,
+      object: (row as any).object ?? (row.metadata?.triple as MemoryTriple | undefined)?.object ?? extractMemoryTriple(row.content, kind).object,
+    });
     return rowTriple.subject === triple.subject && rowTriple.predicate === triple.predicate && !triplesEqual(rowTriple, triple) && !areTriplesContradictory(rowTriple, triple);
   });
 
@@ -352,7 +363,7 @@ async function createMemoryItem(input: {
   const expiresAt = input.expiresAt ?? classification.expiresAt;
 
   const embedding = input.content.length > 20 ? await createEmbedding(input.content).catch(() => null) : null;
-  const triple = extractMemoryTriple(input.content, kind, input.tags);
+  const triple = memoryTripleSchema.parse(extractMemoryTriple(input.content, kind, input.tags));
 
   const [row] = await db
     .insert(schema.memoryItems)
@@ -369,6 +380,9 @@ async function createMemoryItem(input: {
       expiresAt,
       lastConfirmedAt: new Date(),
       embedding: embedding ?? undefined,
+      subject: triple.subject,
+      predicate: triple.predicate,
+      object: triple.object,
       metadata: { ...(input.metadata ?? {}), triple },
     })
     .returning();

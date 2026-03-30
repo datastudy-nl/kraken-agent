@@ -49,6 +49,9 @@ export const messages = pgTable(
     embedding: vector("embedding", { dimensions: 1536 }),
     searchVector: tsvector("search_vector"), // populated by trigger — see init.ts
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    subject: text("subject"),
+    predicate: text("predicate"),
+    object: text("object"),
     metadata: jsonb("metadata").notNull().default({}),
   },
   (t) => [
@@ -81,6 +84,9 @@ export const memoryItems = pgTable(
     supersededBy: uuid("superseded_by"),
     embedding: vector("embedding", { dimensions: 1536 }),
     searchVector: tsvector("search_vector"),
+    subject: text("subject"),
+    predicate: text("predicate"),
+    object: text("object"),
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -89,6 +95,7 @@ export const memoryItems = pgTable(
     index("memory_items_status_idx").on(t.status),
     index("memory_items_scope_idx").on(t.scope),
     index("memory_items_created_idx").on(t.createdAt),
+    index("memory_items_subject_predicate_idx").on(t.subject, t.predicate),
     index("memory_items_search_idx").using("gin", t.searchVector),
   ],
 );

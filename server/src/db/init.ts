@@ -71,6 +71,9 @@ export async function initPostgresSchema(): Promise<void> {
       superseded_by uuid,
       embedding vector(1536),
       search_vector tsvector,
+      subject text,
+      predicate text,
+      object text,
       metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -84,6 +87,9 @@ export async function initPostgresSchema(): Promise<void> {
   `);
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS memory_items_created_idx ON memory_items(created_at)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_subject_predicate_idx ON memory_items(subject, predicate)
   `);
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS memory_items_embedding_idx
@@ -115,6 +121,13 @@ export async function initPostgresSchema(): Promise<void> {
   await db.execute(sql`
     UPDATE memory_items SET search_vector = to_tsvector('english', content)
     WHERE search_vector IS NULL
+  `);
+
+  await db.execute(sql`ALTER TABLE memory_items ADD COLUMN IF NOT EXISTS subject text`);
+  await db.execute(sql`ALTER TABLE memory_items ADD COLUMN IF NOT EXISTS predicate text`);
+  await db.execute(sql`ALTER TABLE memory_items ADD COLUMN IF NOT EXISTS object text`);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS memory_items_subject_predicate_idx ON memory_items(subject, predicate)
   `);
 
   await db.execute(sql`

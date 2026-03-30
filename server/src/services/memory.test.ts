@@ -28,6 +28,9 @@ vi.mock("../db/index.js", () => {
       supersededBy: "superseded_by",
       embedding: "embedding",
       searchVector: "search_vector",
+      subject: "subject",
+      predicate: "predicate",
+      object: "object",
       metadata: "metadata",
       createdAt: "created_at",
       updatedAt: "updated_at",
@@ -202,6 +205,9 @@ describe("curated memory items", () => {
     expect(state.memoryRows[0].kind).toBe("preference");
     expect(state.memoryRows[0].scope).toBe("user");
     expect(state.memoryRows[0].status).toBe("active");
+    expect(state.memoryRows[0].subject).toBe("user");
+    expect(state.memoryRows[0].predicate).toBe("prefers");
+    expect(state.memoryRows[0].object).toBe("short answers");
     expect(state.memoryRows[0].metadata.evidence[0].id).toBe("msg-1");
     expect(state.userModelContent).toContain("User prefers short answers");
   });
@@ -216,6 +222,9 @@ describe("curated memory items", () => {
         sourceType: "user_explicit",
         status: "active",
         tags: ["preference"],
+        subject: "user",
+        predicate: "prefers",
+        object: "short answers",
         metadata: {},
         createdAt: new Date("2026-01-01T00:00:00Z"),
         updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -246,6 +255,9 @@ describe("curated memory items", () => {
         sourceType: "user_explicit",
         status: "active",
         tags: ["preference"],
+        subject: "user",
+        predicate: "prefers",
+        object: "short answers",
         metadata: {},
         createdAt: new Date("2026-01-01T00:00:00Z"),
         updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -263,6 +275,9 @@ describe("curated memory items", () => {
         sourceType: "dream_inference",
         status: "candidate",
         tags: [],
+        subject: "user",
+        predicate: "prefers",
+        object: "direct answers",
         metadata: {},
         createdAt: new Date("2026-01-02T00:00:00Z"),
         updatedAt: new Date("2026-01-02T00:00:00Z"),
@@ -281,7 +296,6 @@ describe("curated memory items", () => {
     expect(result.inferredMemories[0].content).toBe("User likes direct answers");
   });
 
-
   it("queryMemory ranks explicit memories with stronger provenance above weak inferred ones", async () => {
     state.searchRows = [
       {
@@ -292,6 +306,9 @@ describe("curated memory items", () => {
         sourceType: "user_explicit",
         status: "active",
         tags: ["preference"],
+        subject: "user",
+        predicate: "prefers",
+        object: "short practical answers",
         metadata: { evidence: [{ type: "message", id: "msg-1" }, { type: "message", id: "msg-2" }] },
         createdAt: new Date("2026-01-01T00:00:00Z"),
         updatedAt: new Date("2026-01-02T00:00:00Z"),
@@ -310,6 +327,9 @@ describe("curated memory items", () => {
         sourceType: "dream_inference",
         status: "candidate",
         tags: [],
+        subject: "user",
+        predicate: "prefers",
+        object: "long theoretical digressions",
         metadata: { evidence: [{ type: "dream_cycle" }] },
         createdAt: new Date("2026-01-01T00:00:00Z"),
         updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -338,6 +358,9 @@ describe("curated memory items", () => {
         sourceType: "user_explicit",
         status: "active",
         tags: ["temporary"],
+        subject: "user",
+        predicate: "has_code",
+        object: "4821",
         metadata: {},
         createdAt: new Date("2025-01-01T00:00:00Z"),
         updatedAt: new Date("2025-01-01T00:00:00Z"),
@@ -355,6 +378,9 @@ describe("curated memory items", () => {
         sourceType: "assistant_inferred",
         status: "stale",
         tags: [],
+        subject: "user",
+        predicate: "prefers",
+        object: "old stale preference",
         metadata: {},
         createdAt: new Date("2025-01-01T00:00:00Z"),
         updatedAt: new Date("2025-01-15T00:00:00Z"),
@@ -387,7 +413,6 @@ describe("curated memory items", () => {
   });
 });
 
-
 describe("memory item consolidation", () => {
 
   it("stores structured triples and uses embedding-backed duplicate archival", async () => {
@@ -400,6 +425,9 @@ describe("memory item consolidation", () => {
       sourceType: "user_explicit",
       status: "active",
       tags: ["preference"],
+      subject: "user",
+      predicate: "prefers",
+      object: "short practical answers",
       metadata: { triple: { subject: "user", predicate: "prefers", object: "short practical answers" } },
       embedding: new Array(1536).fill(0.1),
       createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -428,6 +456,9 @@ describe("memory item consolidation", () => {
       sourceType: "user_explicit",
       status: "active",
       tags: ["identity"],
+      subject: "user",
+      predicate: "has_name",
+      object: "lars",
       metadata: { triple: { subject: "user", predicate: "has_name", object: "lars" } },
       createdAt: new Date("2026-01-01T00:00:00Z"),
       updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -467,5 +498,16 @@ describe("memory item consolidation", () => {
 
     await storeExplicitMemory("session-1", "User dislikes long explanations", ["preference"]);
     expect(state.updatedMemoryItems.some((item) => item.status === "contradicted")).toBe(true);
+  });
+});
+
+
+describe("structured triple schema", () => {
+  it("persists first-class triple columns for explicit memories", async () => {
+    await storeExplicitMemory("session-1", "My name is Lars", ["identity"]);
+    const latest = state.memoryRows[state.memoryRows.length - 1];
+    expect(latest.subject).toBe("user");
+    expect(latest.predicate).toBe("has_name");
+    expect(latest.object).toBe("lars");
   });
 });
