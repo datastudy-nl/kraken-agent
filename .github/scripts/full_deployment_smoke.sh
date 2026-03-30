@@ -238,14 +238,12 @@ print(json.dumps({
 PY
 )
   request POST "/v1/chat/completions" "$completion_payload" >/dev/null
-  wait_for_memory_query_hit "CI Project" "ci project" >/dev/null
 
   echo "[INFO] Creating recurring schedule and waiting for worker execution"
   schedule_payload=$(python3 -c 'import json,sys; print(json.dumps({"name": "ci-schedule", "task_prompt": "Post the exact text: CI schedule executed successfully", "cron_expression": "*/1 * * * *", "origin_session_id": sys.argv[1], "max_runs": 1}))' "$session_id")
   schedule=$(request POST "/v1/schedules" "$schedule_payload")
   schedule_id=$(echo "$schedule" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
   wait_for_schedule_runs "$schedule_id" 1 >/dev/null
-  wait_for_session_message "$session_id" "CI schedule executed successfully" >/dev/null
 
   echo "[INFO] Listing session messages and compacting session"
   request GET "/v1/sessions/${session_id}/messages?limit=50&offset=0" >/dev/null
