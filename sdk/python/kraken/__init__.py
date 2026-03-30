@@ -1,5 +1,6 @@
 """Kraken Agent Python SDK — connect to any Kraken API instance."""
 
+from kraken.async_client import AsyncKrakenClient
 from kraken.client import KrakenClient
 from kraken.models import (
     ChatResponse,
@@ -14,6 +15,7 @@ from kraken.tools import Tools
 
 __all__ = [
     "KrakenClient",
+    "AsyncKrakenClient",
     "Tools",
     "ChatResponse",
     "Entity",

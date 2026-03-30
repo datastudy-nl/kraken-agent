@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import httpx
@@ -108,6 +108,15 @@ class AsyncTransport:
         resp = await self._client.delete(path)
         resp.raise_for_status()
         return resp.json()
+
+    async def post_stream(
+        self, path: str, json: dict[str, Any] | None = None
+    ) -> AsyncIterator[str]:
+        async with self._client.stream("POST", path, json=json) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_text():
+                if chunk:
+                    yield chunk
 
     async def close(self) -> None:
         await self._client.aclose()

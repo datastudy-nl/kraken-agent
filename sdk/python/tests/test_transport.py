@@ -1,12 +1,11 @@
 """Tests for the Transport and HTTP layer."""
 
-from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 import respx
 
-from kraken._transport import Transport
+from kraken._transport import AsyncTransport, Transport
 
 
 @pytest.fixture
@@ -110,3 +109,43 @@ class TestTransportDelete:
 class TestTransportClose:
     def test_close_does_not_raise(self, transport):
         transport.close()
+
+
+@pytest.fixture
+async def async_transport():
+    t = AsyncTransport("http://localhost:8080", api_key="sk-test", timeout=5.0)
+    yield t
+    await t.close()
+
+
+@respx.mock
+class TestAsyncTransport:
+    @pytest.mark.asyncio
+    async def test_async_get_returns_json(self, async_transport):
+        respx.get("http://localhost:8080/v1/health").mock(
+            return_value=httpx.Response(200, json={"status": "ok"})
+        )
+        result = await async_transport.get("/v1/health")
+        assert result == {"status": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_async_post_returns_json(self, async_transport):
+        respx.post("http://localhost:8080/v1/chat").mock(
+            return_value=httpx.Response(200, json={"id": "resp-1"})
+        )
+        result = await async_transport.post("/v1/chat", json={"message": "Hello"})
+        assert result == {"id": "resp-1"}
+
+    @pytest.mark.asyncio
+    async def test_async_post_stream_yields_chunks(self, async_transport):
+        respx.post("http://localhost:8080/v1/chat").mock(
+            return_value=httpx.Response(
+                200,
+                content=b"chunk1chunk2",
+                headers={"content-type": "text/plain"},
+            )
+        )
+        chunks = []
+        async for chunk in async_transport.post_stream("/v1/chat", json={"message": "Hello"}):
+            chunks.append(chunk)
+        assert "".join(chunks) == "chunk1chunk2"
