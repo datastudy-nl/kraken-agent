@@ -10,6 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     ca-certificates \
     gnupg \
+    procps \
+    net-tools \
+    socat \
+    lsof \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22
@@ -17,7 +22,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages (data science + dev tooling)
+# Install Python packages (data science + dev tooling + web frameworks)
 RUN pip install --no-cache-dir \
     requests \
     pandas \
@@ -27,6 +32,9 @@ RUN pip install --no-cache-dir \
     pytest-cov \
     ruff \
     black \
+    flask \
+    fastapi \
+    uvicorn \
     && rm -rf /root/.cache/pip
 
 # Create non-root user

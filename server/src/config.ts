@@ -41,9 +41,11 @@ const envSchema = z.object({
   KRAKEN_SANDBOX_IMAGE: z.string().default("kraken-sandbox:latest"),
   KRAKEN_SANDBOX_TIMEOUT_MS: z.coerce.number().default(30000),
   KRAKEN_SANDBOX_MEMORY_MB: z.coerce.number().default(256),
-  KRAKEN_SANDBOX_NETWORK: z.string().default("none"),
+  KRAKEN_SANDBOX_NETWORK: z.string().default("kraken-sandbox-net"),
   KRAKEN_WORKSPACES_PATH: z.string().default("/app/workspaces"),
   KRAKEN_WORKSPACES_VOLUME: z.string().default("kraken-agent_kraken-workspaces"),
+  KRAKEN_SANDBOX_PORT_RANGE_START: z.coerce.number().default(30000),
+  KRAKEN_SANDBOX_PORT_RANGE_END: z.coerce.number().default(30099),
 
   // Git (optional — enables private repo cloning in sandbox)
   KRAKEN_GIT_TOKEN: z.string().optional(),

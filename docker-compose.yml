@@ -27,6 +27,9 @@ services:
       - kraken-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
       - kraken-workspaces:/app/workspaces
+    networks:
+      - default
+      - sandbox-net
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +65,9 @@ services:
       - kraken-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
       - kraken-workspaces:/app/workspaces
+    networks:
+      - default
+      - sandbox-net
     depends_on:
       - kraken-api
     restart: unless-stopped
@@ -121,3 +127,8 @@ volumes:
   postgres-data:
   redis-data:
   neo4j-data:
+
+networks:
+  sandbox-net:
+    name: kraken-sandbox-net
+    driver: bridge

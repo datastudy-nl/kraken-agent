@@ -14,6 +14,14 @@ import {
   writeFileInSandbox,
   readFileFromSandbox,
   listFilesInSandbox,
+  addPortForward,
+  removePortForward,
+  getPortForwards,
+  execBackground,
+  readProcessLog,
+  listProcesses,
+  killProcess,
+  getSandboxInfo,
 } from "./sandbox.js";
 import {
   navigateTo,
@@ -499,6 +507,167 @@ export function getBuiltinTools(sessionId: string) {
           return { status: "ok", directory: directory || ".", files };
         } catch (err: any) {
           return { status: "error", message: err.message, files: [] };
+        }
+      },
+    }),
+
+    // ===== Background Process & Port Forwarding Tools =====
+
+    background_exec: tool({
+      description:
+        "Start a long-running command in the sandbox that runs in the background (e.g. a web server, file watcher, build process). " +
+        "Returns immediately with the PID and a log file path. Use read_process_log to check output later. " +
+        "Combine with port_forward to expose servers to the host network.",
+      parameters: z.object({
+        command: z.string().describe("Shell command to run in the background (e.g. 'python -m http.server 8000', 'npm run dev')"),
+        log_file: z.string().describe("Optional log file path inside the container. Use '' for auto-generated path."),
+      }),
+      execute: async ({ command, log_file }) => {
+        try {
+          const result = await execBackground(sessionId, command, log_file || undefined);
+          return {
+            status: "started",
+            pid: result.pid,
+            log_file: result.logFile,
+            message: `Background process started with PID ${result.pid}. Use read_process_log to check output. Use port_forward to expose any listening ports.`,
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    read_process_log: tool({
+      description:
+        "Read the output log of a background process started with background_exec. Shows the last N lines of the log file.",
+      parameters: z.object({
+        log_file: z.string().describe("Log file path returned by background_exec"),
+        lines: z.string().describe("Number of lines to read from the tail. Use '50' for a reasonable amount."),
+      }),
+      execute: async ({ log_file, lines }) => {
+        try {
+          const n = parseInt(lines, 10) || 50;
+          const output = await readProcessLog(sessionId, log_file, n);
+          return {
+            status: "ok",
+            log_file,
+            output: output.slice(0, 16000),
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    list_processes: tool({
+      description:
+        "List all running processes in the sandbox. Shows PIDs, CPU/memory usage, and command lines. Useful for checking on background processes.",
+      parameters: z.object({
+        query: z.string().describe("Describe what you're looking for, or use 'all' to list everything"),
+      }),
+      execute: async () => {
+        try {
+          const output = await listProcesses(sessionId);
+          return {
+            status: "ok",
+            processes: output.slice(0, 8000),
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    kill_process: tool({
+      description:
+        "Kill a running process in the sandbox by PID. Use list_processes to find PIDs first.",
+      parameters: z.object({
+        pid: z.string().describe("Process ID to kill"),
+        signal: z.string().describe("Signal to send: 'TERM' for graceful shutdown, 'KILL' for force kill. Default: 'TERM'."),
+      }),
+      execute: async ({ pid, signal }) => {
+        try {
+          const pidNum = parseInt(pid, 10);
+          if (isNaN(pidNum)) return { status: "error", message: "Invalid PID" };
+          const result = await killProcess(sessionId, pidNum, signal || "TERM");
+          return { status: result.success ? "killed" : "error", pid: pidNum, output: result.output };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    port_forward: tool({
+      description:
+        "Forward a port from the sandbox container to the host machine, making a server running in the sandbox accessible from outside. " +
+        "For example, if you start a web server on port 8000 inside the sandbox, use this to make it reachable at http://HOST_IP:PORT. " +
+        "Use background_exec to start the server first, then port_forward to expose it.",
+      parameters: z.object({
+        container_port: z.string().describe("Port number inside the sandbox to forward (e.g. '8000', '3000')"),
+        host_port: z.string().describe("Preferred host port number. Use '' for auto-assignment from the configured range."),
+      }),
+      execute: async ({ container_port, host_port }) => {
+        try {
+          const cp = parseInt(container_port, 10);
+          if (isNaN(cp) || cp < 1 || cp > 65535) return { status: "error", message: "Invalid container port" };
+          const hp = host_port ? parseInt(host_port, 10) : undefined;
+          const result = await addPortForward(sessionId, cp, hp);
+          return {
+            status: "forwarded",
+            container_port: result.containerPort,
+            host_port: result.hostPort,
+            message: `Port ${result.containerPort} in sandbox is now accessible at host port ${result.hostPort}`,
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    remove_port_forward: tool({
+      description:
+        "Remove a port forward previously created with port_forward. Stops exposing the sandbox port to the host.",
+      parameters: z.object({
+        container_port: z.string().describe("Container port number to stop forwarding"),
+      }),
+      execute: async ({ container_port }) => {
+        try {
+          const cp = parseInt(container_port, 10);
+          const removed = await removePortForward(sessionId, cp);
+          return {
+            status: removed ? "removed" : "not_found",
+            container_port: cp,
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    sandbox_status: tool({
+      description:
+        "Get the status of the current sandbox, including running state, forwarded ports, memory usage, and container details.",
+      parameters: z.object({
+        query: z.string().describe("Describe what you want to know, or use 'all' for full status"),
+      }),
+      execute: async () => {
+        try {
+          const info = await getSandboxInfo(sessionId);
+          if (!info) return { status: "not_running", message: "No sandbox container is running for this session." };
+          return {
+            status: "ok",
+            sandbox: {
+              session_id: info.sessionId,
+              container_id: info.containerId,
+              state: info.status,
+              created: info.created,
+              memory_limit_mb: info.memoryLimitMB,
+              image: info.image,
+              forwarded_ports: info.ports,
+            },
+          };
+        } catch (err: any) {
+          return { status: "error", message: err.message };
         }
       },
     }),
