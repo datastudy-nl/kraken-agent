@@ -36,37 +36,51 @@ export async function runChat(args: GenerateArgs): Promise<{
   toolCalls?: Array<{ toolName: string; args: unknown; result: unknown }>;
   usage?: { inputTokens?: number; outputTokens?: number };
 }> {
-  const result = await generateText({
-    model: args.model ? resolveModel(args.model) : defaultModel,
-    system: args.system,
-    messages: args.messages,
-    tools: args.tools,
-    maxSteps: args.tools ? (args.maxSteps ?? 25) : undefined,
-  });
+  try {
+    const result = await generateText({
+      model: args.model ? resolveModel(args.model) : defaultModel,
+      system: args.system,
+      messages: args.messages,
+      tools: args.tools,
+      maxSteps: args.tools ? (args.maxSteps ?? 25) : undefined,
+    });
 
-  return {
-    text: result.text,
-    toolCalls: result.steps
-      ?.flatMap((step) =>
-        step.toolCalls?.map((tc) => ({
-          toolName: tc.toolName,
-          args: tc.args,
-          result: undefined,
-        })) ?? [],
-      ),
-    usage: {
-      inputTokens: result.usage?.promptTokens,
-      outputTokens: result.usage?.completionTokens,
-    },
-  };
+    return {
+      text: result.text,
+      toolCalls: result.steps
+        ?.flatMap((step) =>
+          step.toolCalls?.map((tc) => ({
+            toolName: tc.toolName,
+            args: tc.args,
+            result: undefined,
+          })) ?? [],
+        ),
+      usage: {
+        inputTokens: result.usage?.promptTokens,
+        outputTokens: result.usage?.completionTokens,
+      },
+    };
+  } catch (err) {
+    // Graceful fallback when no LLM provider is configured
+    return {
+      text: "[No LLM provider configured]",
+      toolCalls: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
 }
 
 export async function createEmbedding(text: string): Promise<number[]> {
-  const result = await embed({
-    model: embeddingModel,
-    value: text,
-  });
-  return result.embedding;
+  try {
+    const result = await embed({
+      model: embeddingModel,
+      value: text,
+    });
+    return result.embedding;
+  } catch {
+    // Return zero-vector when embedding provider is unavailable (e.g. no API key)
+    return new Array(1536).fill(0);
+  }
 }
 
 
@@ -127,13 +141,17 @@ Return ONLY valid JSON.
 Conversation:
 ${conversation}`;
 
-  const result = await generateText({
-    model: extractionModel,
-    prompt,
-  });
-
   try {
-    return JSON.parse(result.text);
+    const result = await generateText({
+      model: extractionModel,
+      prompt,
+    });
+
+    try {
+      return JSON.parse(result.text);
+    } catch {
+      return { entities: [], relationships: [], userSignals: [] };
+    }
   } catch {
     return { entities: [], relationships: [], userSignals: [] };
   }
@@ -147,12 +165,16 @@ export async function summarizeCommunity(
 Community name: ${name}
 Entities: ${entityNames.join(", ")}`;
 
-  const result = await generateText({
-    model: extractionModel,
-    prompt,
-  });
+  try {
+    const result = await generateText({
+      model: extractionModel,
+      prompt,
+    });
 
-  return result.text.trim();
+    return result.text.trim();
+  } catch {
+    return `Community: ${name}`;
+  }
 }
 
 export async function compressUserModel(
@@ -169,12 +191,16 @@ ${currentModel || "(empty)"}
 New signals:
 ${newSignals.map((s) => `- ${s}`).join("\n")}`;
 
-  const result = await generateText({
-    model: extractionModel,
-    prompt,
-  });
+  try {
+    const result = await generateText({
+      model: extractionModel,
+      prompt,
+    });
 
-  return result.text.slice(0, config.KRAKEN_MAX_USER_MODEL_CHARS).trim();
+    return result.text.slice(0, config.KRAKEN_MAX_USER_MODEL_CHARS).trim();
+  } catch {
+    return currentModel || "";
+  }
 }
 
 export interface DreamResult {
@@ -229,13 +255,17 @@ Return ONLY valid JSON with these keys:
 Conversation window:
 ${conversation}`;
 
-  const result = await generateText({
-    model: extractionModel,
-    prompt,
-  });
-
   try {
-    return JSON.parse(result.text);
+    const result = await generateText({
+      model: extractionModel,
+      prompt,
+    });
+
+    try {
+      return JSON.parse(result.text);
+    } catch {
+      return { entities: [], relationships: [], userSignals: [], suggestedTools: [], suggestedSkills: [] };
+    }
   } catch {
     return { entities: [], relationships: [], userSignals: [], suggestedTools: [], suggestedSkills: [] };
   }

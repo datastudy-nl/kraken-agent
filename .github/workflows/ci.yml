@@ -109,3 +109,55 @@ jobs:
 
       - name: Build sandbox image
         run: docker build -f server/sandbox.Dockerfile server/
+
+  full-deployment-test:
+    name: Full Deployment Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create deployment env without provider API keys
+        run: |
+          cat > .env <<'ENVEOF'
+          KRAKEN_API_KEY=test-api-key
+          KRAKEN_SECRET_KEY=test-secret-key-1234567890
+          POSTGRES_PASSWORD=kraken
+          NEO4J_PASSWORD=krakenpass
+          KRAKEN_DEFAULT_MODEL=kraken-omni-2.7n
+          KRAKEN_EXTRACTION_MODEL=kraken-omni-2.7n
+          ENVEOF
+
+      - name: Start full Docker Compose stack
+        run: docker compose up -d --build
+
+      - name: Show container status
+        if: always()
+        run: docker compose ps
+
+      - name: Wait for API container healthy
+        run: |
+          for i in $(seq 1 90); do
+            status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' kraken-agent-kraken-api-1 2>/dev/null || true)
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API container did not become healthy"
+          docker compose logs kraken-api worker postgres redis neo4j chromium
+          exit 1
+
+      - name: Run full deployment smoke test
+        env:
+          BASE_URL: http://localhost:8080
+          KRAKEN_API_KEY: test-api-key
+        run: .github/scripts/full_deployment_smoke.sh
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs --no-color kraken-api worker postgres redis neo4j chromium
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v

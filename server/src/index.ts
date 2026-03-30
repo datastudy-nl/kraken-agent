@@ -78,7 +78,13 @@ app.use("/assets/*", serveStatic({ root: "./public" }));
 app.get("/favicon.ico", serveStatic({ root: "./public", path: "/favicon.ico" }));
 
 // SPA fallback: serve index.html for non-API routes
-app.get("*", serveStatic({ root: "./public", path: "/index.html" }));
+app.get("*", async (c, next) => {
+  // Don't serve SPA fallback for API routes
+  if (c.req.path.startsWith("/v1/") || c.req.path === "/health") {
+    return next();
+  }
+  return serveStatic({ root: "./public", path: "/index.html" })(c, next);
+});
 
 // --- Start ---
 const port = config.PORT;
