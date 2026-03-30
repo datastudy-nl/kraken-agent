@@ -28,7 +28,7 @@ const envSchema = z.object({
   KRAKEN_SANDBOX_IMAGE: z.string().default("kraken-sandbox:latest"),
   KRAKEN_SANDBOX_TIMEOUT_MS: z.coerce.number().default(30000),
   KRAKEN_SANDBOX_MEMORY_MB: z.coerce.number().default(256),
-  KRAKEN_SANDBOX_NETWORK: z.string().default("none"),
+  KRAKEN_SANDBOX_NETWORK: z.string().default("kraken-sandbox-net"),
   KRAKEN_WORKSPACES_PATH: z.string().default("/app/workspaces"),
   KRAKEN_WORKSPACES_VOLUME: z.string().default("kraken-agent_kraken-workspaces"),
   KRAKEN_GIT_TOKEN: z.string().optional(),
@@ -126,7 +126,19 @@ describe("env config schema", () => {
     expect(result.KRAKEN_SANDBOX_IMAGE).toBe("kraken-sandbox:latest");
     expect(result.KRAKEN_SANDBOX_TIMEOUT_MS).toBe(30000);
     expect(result.KRAKEN_SANDBOX_MEMORY_MB).toBe(256);
-    expect(result.KRAKEN_SANDBOX_NETWORK).toBe("none");
+    expect(result.KRAKEN_SANDBOX_NETWORK).toBe("kraken-sandbox-net");
+  });
+
+  it("does not allow all origins by default in production", () => {
+    const result = envSchema.parse({ NODE_ENV: "production" });
+    expect(result.NODE_ENV).toBe("production");
+    expect(result.KRAKEN_ALLOWED_ORIGINS).toBe("");
+  });
+
+  it("allows empty origin list in development for local UI work", () => {
+    const result = envSchema.parse({ NODE_ENV: "development" });
+    expect(result.NODE_ENV).toBe("development");
+    expect(result.KRAKEN_ALLOWED_ORIGINS).toBe("");
   });
 
   it("allows overriding all config values", () => {
