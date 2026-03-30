@@ -141,3 +141,19 @@ export const identityLinks = pgTable(
     index("identity_links_canonical_idx").on(t.canonicalUserId),
   ],
 );
+
+// --- Secrets (encrypted key store) ---
+export const secrets = pgTable(
+  "secrets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull().unique(),
+    encryptedValue: text("encrypted_value").notNull(),
+    description: text("description"),
+    allowedTools: jsonb("allowed_tools"), // string[] | null — null means all tools
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("secrets_name_idx").on(t.name)],
+);

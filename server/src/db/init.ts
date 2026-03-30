@@ -214,4 +214,20 @@ export async function initPostgresSchema(): Promise<void> {
       END IF;
     END $$
   `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS secrets (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      name text NOT NULL UNIQUE,
+      encrypted_value text NOT NULL,
+      description text,
+      allowed_tools jsonb,
+      last_used_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS secrets_name_idx ON secrets(name)
+  `);
 }

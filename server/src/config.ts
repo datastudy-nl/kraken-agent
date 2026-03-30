@@ -50,6 +50,9 @@ const envSchema = z.object({
   // Git (optional — enables private repo cloning in sandbox)
   KRAKEN_GIT_TOKEN: z.string().optional(),
 
+  // Secret store encryption key (required for /v1/secrets)
+  KRAKEN_SECRET_KEY: z.string().optional(),
+
   // CORS
   KRAKEN_ALLOWED_ORIGINS: z.string().default(""),
 

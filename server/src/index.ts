@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -15,6 +16,7 @@ import { schedulesRouter } from "./api/schedules.js";
 import { workspacesRouter } from "./api/workspaces.js";
 import { sandboxesRouter } from "./api/sandboxes.js";
 import { modelsRouter } from "./api/models.js";
+import { secretsRouter } from "./api/secrets.js";
 import { bootstrap } from "./bootstrap.js";
 import { config } from "./config.js";
 
@@ -60,10 +62,18 @@ app.route("/v1/tools", toolsRouter);
 app.route("/v1/identity", identityRouter);
 app.route("/v1/schedules", schedulesRouter);
 app.route("/v1/sandboxes", sandboxesRouter);
+app.route("/v1/secrets", secretsRouter);
 // Workspace endpoints (/:id/workspace/*) are mounted under the same /v1/sessions
 // prefix because they are session-scoped operations, but live in a separate router
 // for code organization. See api/workspaces.ts.
 app.route("/v1/sessions", workspacesRouter);
+
+// --- Static frontend (served from ./public) ---
+app.use("/assets/*", serveStatic({ root: "./public" }));
+app.get("/favicon.ico", serveStatic({ root: "./public", path: "/favicon.ico" }));
+
+// SPA fallback: serve index.html for non-API routes
+app.get("*", serveStatic({ root: "./public", path: "/index.html" }));
 
 // --- Start ---
 const port = config.PORT;

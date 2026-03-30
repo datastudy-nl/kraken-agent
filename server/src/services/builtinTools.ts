@@ -33,6 +33,7 @@ import {
   closePage,
 } from "./browser.js";
 import { storeExplicitMemory, recallMemories } from "./memory.js";
+import { getSecretValue } from "./secrets.js";
 import { config } from "../config.js";
 
 /**
@@ -1591,6 +1592,24 @@ export function getBuiltinTools(sessionId: string) {
           return { status: "closed" };
         } catch (err: any) {
           return { status: "error", message: err.message };
+        }
+      },
+    }),
+
+    // ===== Secret Store =====
+
+    get_secret: tool({
+      description:
+        "Retrieve a secret (API key, password, token) from the encrypted secret store by name. Use this instead of asking the user for credentials. Only secrets whose allowed_tools list includes the calling tool (or secrets with no restrictions) will be returned.",
+      parameters: z.object({
+        name: z.string().describe("The name of the secret to retrieve (e.g. 'OPENAI_API_KEY', 'github_token')"),
+      }),
+      execute: async ({ name }) => {
+        try {
+          const value = await getSecretValue(name);
+          return { status: "ok", name, value };
+        } catch (err: any) {
+          return { status: "error", name, message: err.message };
         }
       },
     }),
