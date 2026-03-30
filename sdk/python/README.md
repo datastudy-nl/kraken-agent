@@ -85,6 +85,31 @@ with KrakenClient("http://localhost:8080") as client:
 # Connection closed automatically
 ```
 
+### Async Client
+
+The package claimed async readiness, but had no async SDK surface. This adds a real async client and async sub-clients.
+
+```python
+import asyncio
+from kraken import AsyncKrakenClient
+
+
+async def main() -> None:
+    async with AsyncKrakenClient(
+        api_url="http://localhost:8080",
+        api_key="sk-kraken-...",
+        model="gpt-5.4",
+    ) as client:
+        response = await client.chat("Hello, async world!")
+        print(response.content)
+
+        async for chunk in client.chat_stream("Stream a short explanation of GraphRAG"):
+            print(chunk, end="")
+
+
+asyncio.run(main())
+```
+
 ---
 
 ## Memory (GraphRAG)

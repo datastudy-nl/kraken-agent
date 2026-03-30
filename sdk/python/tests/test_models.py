@@ -2,8 +2,6 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from kraken.models import (
     AgentsMd,
     ChatResponse,
@@ -13,7 +11,6 @@ from kraken.models import (
     HealthStatus,
     IdentityLink,
     MemoryQueryResult,
-    Message,
     Relationship,
     Session,
     SessionDetail,
@@ -156,7 +153,12 @@ class TestSkill:
 
 class TestTool:
     def test_defaults(self):
-        t = Tool(id="t-1", name="Test Tool", description="Does stuff", instructions="Run it")
+        t = Tool(
+            id="t-1",
+            name="Test Tool",
+            description="Does stuff",
+            instructions="Run it",
+        )
         assert t.input_schema == {}
         assert t.tags == []
 
@@ -167,7 +169,10 @@ class TestIdentityModels:
         assert s.content == "I am Kraken"
 
     def test_user_model(self):
-        u = UserModel(content="User likes Python", updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+        u = UserModel(
+            content="User likes Python",
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
         assert u.content == "User likes Python"
 
     def test_agents_md(self):
