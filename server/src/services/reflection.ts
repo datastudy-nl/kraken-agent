@@ -7,7 +7,7 @@
  */
 import { config } from "../config.js";
 import { runChat } from "./llm.js";
-import { createSkill, listSkills, updateSkill, getSkill } from "./skills.js";
+import { createSkill, listSkills, updateSkill } from "./skills.js";
 
 export interface ReflectionInput {
   sessionId: string;
@@ -59,7 +59,7 @@ export function shouldReflect(
 export async function reflectAndImprove(
   input: ReflectionInput,
 ): Promise<ReflectionResult> {
-  const { sessionId, messages, toolCallCount, hasErrors } = input;
+  const { messages, toolCallCount, hasErrors } = input;
 
   if (!shouldReflect(messages, toolCallCount, hasErrors)) {
     return { reflected: false, action: "skipped", reason: "Below reflection thresholds" };

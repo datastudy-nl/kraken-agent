@@ -1,7 +1,8 @@
-import { generateText, embed, type CoreTool, type LanguageModelV1 } from "ai";
+import { generateObject, generateText, embed, type CoreTool, type LanguageModelV1 } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { config } from "../config.js";
+import { extractedMemoryTripleSchema, type MemoryKind } from "./memory_schema.js";
 
 /** Map Kraken-branded names → upstream provider model IDs */
 const MODEL_ALIASES: Record<string, string> = {
@@ -66,6 +67,37 @@ export async function createEmbedding(text: string): Promise<number[]> {
     value: text,
   });
   return result.embedding;
+}
+
+
+export async function extractStructuredMemoryTriple(
+  fact: string,
+  kind?: MemoryKind,
+  tags?: string[],
+): Promise<{ triple: { subject: string; predicate: string; object: string }; confidence: number; rationale?: string } | null> {
+  try {
+    const result = await generateObject({
+      model: extractionModel,
+      schema: extractedMemoryTripleSchema,
+      prompt: `You convert a single memory statement into a strict subject/predicate/object triple for an AI memory system.
+
+Rules:
+- Return exactly one triple.
+- subject should usually be "user" for user facts/preferences/goals, or a stable entity like "project" when appropriate.
+- predicate must be one of: prefers, avoids, has_name, works_on, has_goal, has_constraint, has_code, states.
+- object should be the normalized core value of the memory.
+- Do not paraphrase into free-form summaries.
+- Use the provided kind/tags as hints, but ground the triple in the fact text.
+
+Fact: ${fact}
+Kind: ${kind ?? "unknown"}
+Tags: ${(tags ?? []).join(", ") || "none"}` ,
+    });
+
+    return result.object;
+  } catch {
+    return null;
+  }
 }
 
 export async function extractMemoryFromConversation(

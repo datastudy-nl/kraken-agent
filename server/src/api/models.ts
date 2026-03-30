@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { config } from "../config.js";
 
 export const modelsRouter = new Hono();
 

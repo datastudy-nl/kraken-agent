@@ -16,7 +16,6 @@ import {
   listFilesInSandbox,
   addPortForward,
   removePortForward,
-  getPortForwards,
   execBackground,
   readProcessLog,
   listProcesses,
