@@ -13,6 +13,7 @@ import {
   executeCode,
   shellExec,
   writeFileInSandbox,
+  writeBinaryInSandbox,
   readFileFromSandbox,
   readBinaryFromSandbox,
   listFilesInSandbox,
@@ -1721,14 +1722,7 @@ export function getBuiltinTools(sessionId: string) {
 
           // Save to workspace
           const safeName = filename.endsWith(".png") ? filename : `${filename}.png`;
-          await writeFileInSandbox(sessionId, safeName, "");
-          // Write raw binary (writeFileInSandbox writes utf-8, so use the workspace path directly)
-          const wsPath = path.join(config.KRAKEN_WORKSPACES_PATH, sessionId);
-          const normalized = path.normalize(safeName).replace(/^(\.\.[/\\])+/, "");
-          const fullPath = path.resolve(wsPath, normalized);
-          const fsP = await import("node:fs/promises");
-          await fsP.mkdir(path.dirname(fullPath), { recursive: true });
-          await fsP.writeFile(fullPath, buf);
+          await writeBinaryInSandbox(sessionId, safeName, buf);
 
           return {
             status: "ok",
