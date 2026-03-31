@@ -13,4 +13,8 @@ if [ -S /var/run/docker.sock ]; then
   addgroup kraken "$DOCKER_GROUP" 2>/dev/null || true
 fi
 
+# Ensure workspaces directory is writable by kraken (named volume may be root-owned)
+chown -R kraken:kraken /app/workspaces 2>/dev/null || true
+chown -R kraken:kraken /app/data 2>/dev/null || true
+
 exec su-exec kraken "$@"
