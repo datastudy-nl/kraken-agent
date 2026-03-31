@@ -45,7 +45,7 @@ class Files:
         """
         encoded_path = quote(path, safe="/")
         data = self._t.get(f"/v1/sessions/{session_id}/workspace/{encoded_path}")
-        return data["content"]
+        return str(data["content"])
 
     def read_bytes(self, session_id: str, path: str) -> bytes:
         """Read a binary file from the workspace.
