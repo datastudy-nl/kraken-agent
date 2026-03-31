@@ -334,6 +334,26 @@ export async function readBinaryFromSandbox(
 }
 
 /**
+ * Recursively snapshot all file paths in the workspace.
+ * Returns a Set of relative paths for fast diffing.
+ */
+export async function snapshotWorkspaceFiles(sessionId: string): Promise<Set<string>> {
+  const base = workspacePath(sessionId);
+  const result = new Set<string>();
+  async function walk(dir: string) {
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { await walk(full); }
+      else { result.add(path.relative(base, full).replace(/\\/g, "/")); }
+    }
+  }
+  await walk(base);
+  return result;
+}
+
+/**
  * List files in the sandbox workspace.
  */
 export async function listFilesInSandbox(

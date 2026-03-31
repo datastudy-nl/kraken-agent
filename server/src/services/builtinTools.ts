@@ -16,6 +16,7 @@ import {
   readFileFromSandbox,
   readBinaryFromSandbox,
   listFilesInSandbox,
+  snapshotWorkspaceFiles,
   addPortForward,
   removePortForward,
   execBackground,
@@ -425,12 +426,16 @@ export function getBuiltinTools(sessionId: string) {
       }),
       execute: async ({ code, timeout_ms }) => {
         try {
+          const before = await snapshotWorkspaceFiles(sessionId);
           const timeout = parseInt(timeout_ms, 10) || undefined;
           const result = await executeCode(sessionId, code, timeout);
+          const after = await snapshotWorkspaceFiles(sessionId);
+          const created_files = [...after].filter((f) => !before.has(f));
           return {
             stdout: result.stdout.slice(0, 16000),
             stderr: result.stderr.slice(0, 4000),
             exit_code: result.exitCode,
+            ...(created_files.length > 0 ? { created_files } : {}),
           };
         } catch (err: any) {
           return { stdout: "", stderr: err.message, exit_code: -1 };
@@ -447,12 +452,16 @@ export function getBuiltinTools(sessionId: string) {
       }),
       execute: async ({ command, timeout_ms }) => {
         try {
+          const before = await snapshotWorkspaceFiles(sessionId);
           const timeout = parseInt(timeout_ms, 10) || undefined;
           const result = await shellExec(sessionId, command, timeout);
+          const after = await snapshotWorkspaceFiles(sessionId);
+          const created_files = [...after].filter((f) => !before.has(f));
           return {
             stdout: result.stdout.slice(0, 16000),
             stderr: result.stderr.slice(0, 4000),
             exit_code: result.exitCode,
+            ...(created_files.length > 0 ? { created_files } : {}),
           };
         } catch (err: any) {
           return { stdout: "", stderr: err.message, exit_code: -1 };

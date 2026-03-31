@@ -6,6 +6,8 @@ import {
   Brain,
   Container,
   KeyRound,
+  Fingerprint,
+  Clock,
   ChevronLeft,
   ChevronRight,
   Sun,
@@ -19,6 +21,8 @@ const navItems = [
   { to: "/", icon: MessageSquare, label: "Chat" },
   { to: "/sessions", icon: List, label: "Sessions" },
   { to: "/memory", icon: Brain, label: "Memory" },
+  { to: "/identity", icon: Fingerprint, label: "Identity" },
+  { to: "/schedules", icon: Clock, label: "Schedules" },
   { to: "/sandboxes", icon: Container, label: "Sandboxes" },
   { to: "/keys", icon: KeyRound, label: "Keys" },
 ];

@@ -183,20 +183,39 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
   const attachments: Array<{ path: string; filename: string; mime_type: string; size_bytes: number }> = [];
   const seenPaths = new Set<string>();
 
-  // 1. Files from tool results (write_file, generate_image)
+  // 1. Files from tool results (write_file, generate_image, shell_exec, execute_code)
   for (const tc of result.toolCalls ?? []) {
-    if (!FILE_TOOLS.has(tc.toolName) || tc.result == null) continue;
-    const r = tc.result as Record<string, unknown>;
-    if (r.status !== "ok" && r.status !== "written") continue;
-    const filePath = r.path as string;
-    if (seenPaths.has(filePath)) continue;
-    seenPaths.add(filePath);
-    attachments.push({
-      path: filePath,
-      filename: filePath.split("/").pop() ?? filePath,
-      mime_type: (r.mime_type as string) ?? guessMime(filePath),
-      size_bytes: (r.size_bytes ?? r.size ?? 0) as number,
-    });
+    const r = tc.result as Record<string, unknown> | undefined;
+    if (r == null) continue;
+
+    // Tools that directly produce a file (write_file, generate_image)
+    if (FILE_TOOLS.has(tc.toolName) && (r.status === "ok" || r.status === "written")) {
+      const filePath = r.path as string;
+      if (!seenPaths.has(filePath)) {
+        seenPaths.add(filePath);
+        attachments.push({
+          path: filePath,
+          filename: filePath.split("/").pop() ?? filePath,
+          mime_type: (r.mime_type as string) ?? guessMime(filePath),
+          size_bytes: (r.size_bytes ?? r.size ?? 0) as number,
+        });
+      }
+    }
+
+    // Tools that track newly created files (shell_exec, execute_code)
+    if (Array.isArray(r.created_files)) {
+      for (const fp of r.created_files as string[]) {
+        if (!seenPaths.has(fp)) {
+          seenPaths.add(fp);
+          attachments.push({
+            path: fp,
+            filename: fp.split("/").pop() ?? fp,
+            mime_type: guessMime(fp),
+            size_bytes: 0,
+          });
+        }
+      }
+    }
   }
 
   // 2. Model-native file outputs (OpenAI output_file blocks)

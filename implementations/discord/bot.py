@@ -18,6 +18,7 @@ kraken = KrakenClient(
     api_url=KRAKEN_API_URL,
     model=KRAKEN_MODEL,
     api_key=KRAKEN_API_KEY,
+    timeout=600.0,
 )
 
 intents = discord.Intents.default()
@@ -100,13 +101,22 @@ async def on_message(message: discord.Message) -> None:
         )
 
     # Download any file attachments from the response
+    DISCORD_FILE_LIMIT = 25 * 1024 * 1024  # 25 MB
     attachments: list[discord.File] = []
+    skipped: list[str] = []
     for att in reply.attachments:
+        if att.size_bytes > DISCORD_FILE_LIMIT:
+            skipped.append(att.filename or att.path)
+            continue
         file = await download_sandbox_file(reply.session_id, att.path)
         if file:
             attachments.append(file)
 
-    chunks = split_message(reply.content)
+    content = reply.content
+    if skipped:
+        content += "\n\n⚠️ Skipped (too large for Discord): " + ", ".join(skipped)
+
+    chunks = split_message(content)
     first = True
     for chunk in chunks:
         if first:

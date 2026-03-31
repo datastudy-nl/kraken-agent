@@ -9,6 +9,8 @@ import { MemoryPage } from "@/pages/MemoryPage";
 import { SandboxesPage } from "@/pages/SandboxesPage";
 import { SandboxDetailPage } from "@/pages/SandboxDetailPage";
 import { KeysPage } from "@/pages/KeysPage";
+import { IdentityPage } from "@/pages/IdentityPage";
+import { SchedulesPage } from "@/pages/SchedulesPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +34,8 @@ export default function App() {
                 <Route path="/sandboxes" element={<SandboxesPage />} />
                 <Route path="/sandboxes/:sessionId" element={<SandboxDetailPage />} />
                 <Route path="/keys" element={<KeysPage />} />
+                <Route path="/identity" element={<IdentityPage />} />
+                <Route path="/schedules" element={<SchedulesPage />} />
               </Routes>
             </main>
           </div>
