@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 
 
 # --- Chat ---
+class Attachment(BaseModel):
+    path: str
+    size_bytes: int = 0
+
+
 class ChatResponse(BaseModel):
     id: str
     session_id: str
@@ -17,6 +22,7 @@ class ChatResponse(BaseModel):
     content: str
     model: str
     tool_calls: list[ToolCall] = Field(default_factory=list)
+    attachments: list[Attachment] = Field(default_factory=list)
     usage: Usage = Field(default_factory=lambda: Usage())
     created_at: datetime
 

@@ -3,6 +3,7 @@
 from kraken.async_client import AsyncKrakenClient
 from kraken.client import KrakenClient
 from kraken.models import (
+    Attachment,
     ChatResponse,
     Entity,
     FileContent,
@@ -21,6 +22,7 @@ __all__ = [
     "KrakenClient",
     "AsyncKrakenClient",
     "Tools",
+    "Attachment",
     "ChatResponse",
     "Entity",
     "FileContent",

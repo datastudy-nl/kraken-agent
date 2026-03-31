@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 import dotenv
 
@@ -63,6 +64,16 @@ def split_message(text: str, limit: int = 1990) -> list[str]:
     return chunks
 
 
+async def download_sandbox_file(session_id: str, path: str) -> discord.File | None:
+    """Download a file from the sandbox workspace and return it as a discord.File."""
+    try:
+        data = await asyncio.to_thread(kraken.files.read_bytes, session_id, path)
+        filename = path.rsplit("/", 1)[-1]
+        return discord.File(io.BytesIO(data), filename=filename)
+    except Exception:
+        return None
+
+
 @bot.event
 async def on_message(message: discord.Message) -> None:
     if message.author.bot:
@@ -80,18 +91,25 @@ async def on_message(message: discord.Message) -> None:
     async with message.channel.typing():
         reply = await asyncio.to_thread(
             kraken.chat,
-            message.content or "What's in this image?",
+            f"[discord] {message.author}> {message.content}" or "What's in this image?",
             session_key=f"discord-{message.channel.id}",
             session_name=f"Discord channel {message.channel.id}",
             images=image_urls or None,
             metadata={"discord_user": str(message.author), "discord_user_id": str(message.author.id)},
         )
 
+    # Download any file attachments from the response
+    attachments: list[discord.File] = []
+    for att in reply.attachments:
+        file = await download_sandbox_file(reply.session_id, att.path)
+        if file:
+            attachments.append(file)
+
     chunks = split_message(reply.content)
     first = True
     for chunk in chunks:
         if first:
-            await message.reply(chunk)
+            await message.reply(chunk, files=attachments if attachments else None)
             first = False
         else:
             await message.channel.send(chunk)

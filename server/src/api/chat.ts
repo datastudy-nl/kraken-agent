@@ -162,6 +162,21 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
     hasErrors,
   );
 
+  const FILE_TOOLS = new Set(["generate_image", "write_file"]);
+  const attachments = (result.toolCalls ?? [])
+    .filter((tc) => FILE_TOOLS.has(tc.toolName) && tc.result != null)
+    .filter((tc) => {
+      const r = tc.result as Record<string, unknown>;
+      return r.status === "ok" || r.status === "written";
+    })
+    .map((tc) => {
+      const r = tc.result as Record<string, unknown>;
+      return {
+        path: r.path as string,
+        size_bytes: (r.size_bytes ?? r.size ?? 0) as number,
+      };
+    });
+
   return c.json({
     id: crypto.randomUUID(),
     session_id: sessionId,
@@ -173,6 +188,7 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
       name: tc.toolName,
       arguments: tc.args ?? {},
     })),
+    attachments,
     usage: {
       prompt_tokens: result.usage?.inputTokens ?? 0,
       completion_tokens: result.usage?.outputTokens ?? 0,

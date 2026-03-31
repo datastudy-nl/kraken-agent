@@ -49,10 +49,10 @@ export async function runChat(args: GenerateArgs): Promise<{
       text: result.text,
       toolCalls: result.steps
         ?.flatMap((step) =>
-          step.toolCalls?.map((tc) => ({
+          step.toolCalls?.map((tc, i) => ({
             toolName: tc.toolName,
             args: tc.args,
-            result: undefined,
+            result: (step.toolResults as unknown as Array<{ result: unknown }>)?.[i]?.result,
           })) ?? [],
         ),
       usage: {
@@ -62,6 +62,7 @@ export async function runChat(args: GenerateArgs): Promise<{
     };
   } catch (err) {
     // Graceful fallback when no LLM provider is configured
+    console.error("[runChat] LLM error:", err);
     return {
       text: "[No LLM provider configured]",
       toolCalls: [],

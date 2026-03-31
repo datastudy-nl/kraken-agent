@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from kraken._transport import Transport
-from kraken.models import FileContent, FileEntry, FileWriteResult
+from kraken.models import FileEntry, FileWriteResult
 
 
 class Files:
