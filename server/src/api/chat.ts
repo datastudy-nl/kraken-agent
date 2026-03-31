@@ -12,6 +12,7 @@ import { runChat, resolveModel } from "../services/llm.js";
 import { queuePostConversation } from "../services/queue.js";
 import { getBuiltinTools } from "../services/builtinTools.js";
 import { shouldCompact, preCompactionFlush, compactHistory } from "../services/compaction.js";
+import { writeBinaryInSandbox } from "../services/sandbox.js";
 import { config } from "../config.js";
 
 export const chatRouter = new Hono();
@@ -162,27 +163,75 @@ chatRouter.post("/", zValidator("json", chatRequestSchema), async (c) => {
     hasErrors,
   );
 
+  // --- Collect file attachments ---
+  const MIME_BY_EXT: Record<string, string> = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+    ".pdf": "application/pdf", ".zip": "application/zip",
+    ".tar": "application/x-tar", ".gz": "application/gzip",
+    ".json": "application/json", ".csv": "text/csv",
+    ".txt": "text/plain", ".md": "text/markdown",
+    ".js": "text/javascript", ".ts": "text/typescript",
+    ".py": "text/x-python", ".html": "text/html",
+  };
+  function guessMime(filePath: string): string {
+    const ext = filePath.slice(filePath.lastIndexOf(".")).toLowerCase();
+    return MIME_BY_EXT[ext] ?? "application/octet-stream";
+  }
+
   const FILE_TOOLS = new Set(["generate_image", "write_file"]);
-  const attachments = (result.toolCalls ?? [])
-    .filter((tc) => FILE_TOOLS.has(tc.toolName) && tc.result != null)
-    .filter((tc) => {
-      const r = tc.result as Record<string, unknown>;
-      return r.status === "ok" || r.status === "written";
-    })
-    .map((tc) => {
-      const r = tc.result as Record<string, unknown>;
-      return {
-        path: r.path as string,
-        size_bytes: (r.size_bytes ?? r.size ?? 0) as number,
-      };
+  const attachments: Array<{ path: string; filename: string; mime_type: string; size_bytes: number }> = [];
+  const seenPaths = new Set<string>();
+
+  // 1. Files from tool results (write_file, generate_image)
+  for (const tc of result.toolCalls ?? []) {
+    if (!FILE_TOOLS.has(tc.toolName) || tc.result == null) continue;
+    const r = tc.result as Record<string, unknown>;
+    if (r.status !== "ok" && r.status !== "written") continue;
+    const filePath = r.path as string;
+    if (seenPaths.has(filePath)) continue;
+    seenPaths.add(filePath);
+    attachments.push({
+      path: filePath,
+      filename: filePath.split("/").pop() ?? filePath,
+      mime_type: (r.mime_type as string) ?? guessMime(filePath),
+      size_bytes: (r.size_bytes ?? r.size ?? 0) as number,
     });
+  }
+
+  // 2. Model-native file outputs (OpenAI output_file blocks)
+  if (result.files) {
+    for (let i = 0; i < result.files.length; i++) {
+      const f = result.files[i];
+      const ext = f.mimeType.split("/")[1]?.split("+")[0] ?? "bin";
+      const filename = `output-${i}.${ext}`;
+      // Save to workspace so client can fetch via workspace API
+      const buf = Buffer.from(f.base64, "base64");
+      await writeBinaryInSandbox(sessionId, filename, buf);
+      if (!seenPaths.has(filename)) {
+        seenPaths.add(filename);
+        attachments.push({
+          path: filename,
+          filename,
+          mime_type: f.mimeType,
+          size_bytes: buf.length,
+        });
+      }
+    }
+  }
+
+  // Strip base64 data-URI blobs from the text content to keep the response lean
+  const cleanContent = result.text.replace(
+    /!\[[^\]]*\]\(data:[^)]{100,}\)/g,
+    "",
+  ).trim();
 
   return c.json({
     id: crypto.randomUUID(),
     session_id: sessionId,
     session_key: "session_key" in session ? session.session_key : null,
     role: "assistant",
-    content: result.text,
+    content: cleanContent,
     model: body.model ?? config.KRAKEN_DEFAULT_MODEL,
     tool_calls: (result.toolCalls ?? []).map((tc) => ({
       name: tc.toolName,

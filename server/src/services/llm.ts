@@ -31,9 +31,15 @@ export interface GenerateArgs {
   maxSteps?: number;
 }
 
+export interface GeneratedFileRef {
+  base64: string;
+  mimeType: string;
+}
+
 export async function runChat(args: GenerateArgs): Promise<{
   text: string;
   toolCalls?: Array<{ toolName: string; args: unknown; result: unknown }>;
+  files?: GeneratedFileRef[];
   usage?: { inputTokens?: number; outputTokens?: number };
 }> {
   try {
@@ -45,6 +51,12 @@ export async function runChat(args: GenerateArgs): Promise<{
       maxSteps: args.tools ? (args.maxSteps ?? 25) : undefined,
     });
 
+    // Collect model-native file outputs (e.g. OpenAI output_file blocks)
+    const files: GeneratedFileRef[] = (result.files ?? []).map((f) => ({
+      base64: f.base64,
+      mimeType: f.mimeType,
+    }));
+
     return {
       text: result.text,
       toolCalls: result.steps
@@ -55,6 +67,7 @@ export async function runChat(args: GenerateArgs): Promise<{
             result: (step.toolResults as unknown as Array<{ result: unknown }>)?.[i]?.result,
           })) ?? [],
         ),
+      files: files.length > 0 ? files : undefined,
       usage: {
         inputTokens: result.usage?.promptTokens,
         outputTokens: result.usage?.completionTokens,

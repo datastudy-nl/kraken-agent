@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 # --- Chat ---
 class Attachment(BaseModel):
     path: str
+    filename: str = ""
+    mime_type: str = "application/octet-stream"
     size_bytes: int = 0
 
 
