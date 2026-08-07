@@ -37,6 +37,7 @@ vi.mock("./sandbox.js", () => ({
   listProcesses: (...args: unknown[]) => mockListProcesses(...args),
   killProcess: (...args: unknown[]) => mockKillProcess(...args),
   getSandboxInfo: (...args: unknown[]) => mockGetSandboxInfo(...args),
+  snapshotWorkspaceFiles: vi.fn().mockResolvedValue([]),
 }));
 
 const mockNavigateTo = vi.fn();
